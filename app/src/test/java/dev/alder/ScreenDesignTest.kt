@@ -51,6 +51,26 @@ class ScreenDesignTest {
         assertEquals(emptySet<String>(), audioLanguagesIn("Movie.2024.2160p.WEB-DL.DV.HDR.H265"))
     }
 
+    @Test fun whatsNewReadsOneVersionsEntries() {
+        val log = "# Changelog\n\n- a rule, not a change\n\n## Unreleased\n\n- Next\n\n## 1.2\n\n- **One.** First\n- Two\n\n## 1.1\n\n- Old\n"
+        assertEquals(listOf("**One.** First", "Two"), changesFor(log, "1.2"))
+        assertEquals(listOf("Next"), changesFor(log, "Unreleased"))
+        assertEquals(emptyList<String>(), changesFor(log, "1.3"))
+    }
+
+    @Test fun debridServiceFromTagsAndLinks() {
+        fun of(name: String, url: String = "https://example.com/v.mkv") = debridOf(name, url)?.let { "${it.short} ${it.cached}" }
+        assertEquals("RD true", of("[RD+] Torrentio\n4k"))
+        assertEquals("RD false", of("[RD download] Torrentio\n1080p"))
+        assertEquals("TB true", of("[TB⚡] Comet 2160p"))
+        assertEquals("AD false", of("[AD⏳] AIOStreams"))
+        assertEquals("RD true", of("MediaFusion ⚡RD 4K"))
+        assertEquals("PM null", of("Torrentio\n4k", "https://torrentio.strem.fun/resolve/premiumize/key/hash/null/0/v.mkv"))
+        assertEquals("RD null", of("Direct", "https://abc.download.real-debrid.com/d/X/v.mkv"))
+        assertEquals(null, of("Movie.2024.1080p.WEB-DL.DDP5.1")) // DL and DD aren't services without a tag
+        assertEquals(null, of("[HDR] 4K"))
+    }
+
     @Test fun homeRecommendationRowHasTheShortLabel() {
         assertEquals("More like Dune", homeRowName("Because you watched Dune"))
         assertEquals("More like Crayon Shin-chan", homeRowName("Because you watched Crayon Shin-chan: Pursuit"))

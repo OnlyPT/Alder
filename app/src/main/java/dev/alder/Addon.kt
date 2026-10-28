@@ -34,22 +34,34 @@ class Addon(val descriptor: JSONObject) {
     val configureUrl: String? = base.takeIf { manifest.optJSONObject("behaviorHints")?.optBoolean("configurable") == true }
         ?.let { "$it/configure" }
 
-    /** [pages]: the catalog takes Stremio's `skip` extra, so a row can ask for the titles after the first page. */
-    class Catalog(val addon: Addon, val type: String, val id: String, val name: String, val pages: Boolean, val genres: List<String>)
+    /**
+     * [pages]: the catalog takes Stremio's `skip` extra, so a row can ask for the titles after the first page.
+     * [required]: extras it can't be asked without, with the value Stremio would pick (`genre` → "None").
+     */
+    class Catalog(val addon: Addon, val type: String, val id: String, val name: String, val pages: Boolean, val genres: List<String>,
+                  val required: Map<String, String> = emptyMap())
 
-    /** Catalogs Home can show: the ones that need no required input such as a search query. */
-    val catalogs: List<Catalog> = manifest.optJSONArray("catalogs").objects()
-        .filter { c ->
-            (c.optJSONArray("extraRequired")?.length() ?: 0) == 0 &&
-                c.optJSONArray("extra").objects().none { it.optBoolean("isRequired") }
+    /**
+     * Catalogs Home can show. One with a required extra is asked with that extra's default or first option, as
+     * Stremio's Discover does: AIOMetadata marks the genre of every catalog not shown on Stremio's board as required
+     * (its first option "None"), and skipping those left a Shows page with no rows. A required extra with no options
+     * (a search query) still leaves the catalog out.
+     */
+    val catalogs: List<Catalog> = manifest.optJSONArray("catalogs").objects().mapNotNull { c ->
+        val extra = c.optJSONArray("extra").objects()
+        val extras = c.optJSONArray("extraSupported").strings() + extra.map { it.optString("name") }
+        // The genres it can filter by: the protocol's `genre` extra options, or the older `genres` list.
+        val options = extra.firstOrNull { it.optString("name") == "genre" }?.optJSONArray("options").strings()
+            .ifEmpty { c.optJSONArray("genres").strings() }
+        val requiredNames = c.optJSONArray("extraRequired").strings() + extra.filter { it.optBoolean("isRequired") }.map { it.optString("name") }
+        val required = requiredNames.distinct().associateWith { name ->
+            val own = extra.firstOrNull { it.optString("name") == name }
+            val choices = own?.optJSONArray("options").strings().ifEmpty { if (name == "genre") options else emptyList() }
+            own?.text("default")?.takeIf { it in choices } ?: choices.firstOrNull() ?: return@mapNotNull null
         }
-        .map { c ->
-            val extras = c.optJSONArray("extraSupported").strings() + c.optJSONArray("extra").objects().map { it.optString("name") }
-            // The genres it can filter by: the protocol's `genre` extra options, or the older `genres` list.
-            val genres = c.optJSONArray("extra").objects().firstOrNull { it.optString("name") == "genre" }?.optJSONArray("options").strings()
-                .ifEmpty { c.optJSONArray("genres").strings() }
-            Catalog(this, c.getString("type"), c.getString("id"), c.optString("name").ifEmpty { c.getString("id") }, "skip" in extras, genres)
-        }
+        Catalog(this, c.getString("type"), c.getString("id"), c.optString("name").ifEmpty { c.getString("id") }, "skip" in extras,
+            options.filterNot { it.equals("None", ignoreCase = true) }, required) // "None" is no filter, not a genre
+    }
 
     /** Whether this addon answers [resource] ("meta", "stream", …) for this type and id. */
     fun serves(resource: String, type: String, id: String): Boolean {
@@ -64,14 +76,22 @@ class Addon(val descriptor: JSONObject) {
     // Catalogs (one [genre] of them with Stremio's `genre` extra) and details are kept on disk as they arrive; the saved*
     // versions read last time's answer, no network.
     fun catalog(c: Catalog, genre: String? = null, timeoutMs: Int = 20_000): List<Meta> =
-        JSONObject(Http.get(url(catalogPath(c, genre)), true, timeoutMs)).optJSONArray("metas").objects().map(::Meta)
+        JSONObject(Http.get(catalogUrl(c, genre), true, timeoutMs)).optJSONArray("metas").objects().map(::Meta)
 
     /** The titles after the first [skip] (Stremio's paging extra); not kept on disk. */
-    fun catalog(c: Catalog, skip: Int): List<Meta> = get(false, "catalog", c.type, c.id, "skip=$skip").optJSONArray("metas").objects().map(::Meta)
+    fun catalog(c: Catalog, skip: Int): List<Meta> =
+        JSONObject(Http.get(catalogUrl(c, null, skip))).optJSONArray("metas").objects().map(::Meta)
 
-    fun savedCatalog(c: Catalog, genre: String? = null): List<Meta>? = saved(*catalogPath(c, genre))?.optJSONArray("metas")?.objects()?.map(::Meta)
+    fun savedCatalog(c: Catalog, genre: String? = null): List<Meta>? =
+        Http.savedAnswer(catalogUrl(c, genre))?.let { runCatching { JSONObject(it) }.getOrNull() }?.optJSONArray("metas")?.objects()?.map(::Meta)
 
-    private fun catalogPath(c: Catalog, genre: String?) = listOfNotNull("catalog", c.type, c.id, genre?.let { "genre=$it" }).toTypedArray()
+    /** /catalog/type/id/genre=Drama&skip=20.json: the catalog's required extras, the [genre] picked, and the page. */
+    private fun catalogUrl(c: Catalog, genre: String?, skip: Int = 0): String {
+        val extras = c.required + listOfNotNull(genre?.let { "genre" to it }, ("skip" to "$skip").takeIf { skip > 0 })
+        val path = url(arrayOf("catalog", c.type, c.id))
+        if (extras.isEmpty()) return path
+        return path.removeSuffix(".json") + "/" + extras.entries.joinToString("&") { (k, v) -> "$k=${Uri.encode(v)}" } + ".json"
+    }
 
     /** Every search catalog the addon advertises, as Stremio's catalog protocol specifies. */
     fun search(query: String): List<Meta> {
@@ -238,8 +258,15 @@ class Stream(
      */
     val isVideo get() = size == 0L || size >= 50L * 1024 * 1024
 
-    /** The addon's name for it on one line: "Torrentio (2160p)" becomes "Torrentio  ·  2160p". */
-    val label get() = title.lines().joinToString(" ") { it.trim() }.replace(Regex("\\s*\\((.+?)\\)\\s*$"), "  ·  $1")
+    /**
+     * The addon's name for it on one line: "Torrentio (2160p)" becomes "Torrentio  ·  2160p". A debrid tag ("[RD+]")
+     * becomes the service's name at the end, as the player shows it: "Torrentio  ·  2160p  ·  Real-Debrid".
+     */
+    val label get() = title.lines().joinToString(" ") { it.trim() }.replace(debridTag, "").trim()
+        .replace(Regex("\\s*\\((.+?)\\)\\s*$"), "  ·  $1") + (debrid?.let { "  ·  ${it.name}" } ?: "")
+
+    /** The debrid service it comes through, null for a direct link. */
+    val debrid: Debrid? = debridOf(title, url)
 
     // What the release is, read from its file name and the addon's labels (AIOStreams writes "2160p", "DV", "HEVC"
     // into them; the file name says it for every addon). ponytail: name matching, not the file's real tracks.
@@ -370,6 +397,45 @@ private val languageWords = mapOf("english" to "en", "eng" to "en", "hindi" to "
     "ukrainian" to "uk", "czech" to "cs", "hungarian" to "hu", "romanian" to "ro", "persian" to "fa", "urdu" to "ur",
     "bengali" to "bn", "tamil" to "ta", "tam" to "ta", "telugu" to "te", "tel" to "te", "malayalam" to "ml",
     "kannada" to "kn", "marathi" to "mr")
+
+/** A debrid service ([short] as add-ons tag it, "RD"); [cached]: ready to start at once, null when the add-on doesn't say. */
+class Debrid(val name: String, val short: String, val cached: Boolean?) {
+    /** The source list's tag: "RD ⚡" when cached. */
+    val tag get() = if (cached == true) "$short ⚡" else short
+}
+
+private val debridServices = listOf(
+    Triple("RD", "Real-Debrid", listOf("real-debrid", "realdebrid", "rdeb.io")),
+    Triple("AD", "AllDebrid", listOf("alldebrid", "debrid.it")),
+    Triple("PM", "Premiumize", listOf("premiumize", "energycdn")),
+    Triple("TB", "TorBox", listOf("torbox", "tb-cdn")),
+    Triple("DL", "Debrid-Link", listOf("debrid-link", "debridlink")),
+    Triple("ED", "EasyDebrid", listOf("easydebrid")),
+    Triple("OC", "Offcloud", listOf("offcloud")),
+    Triple("PIO", "Put.io", listOf("put.io", "putio")),
+)
+
+// Add-ons' tags: Torrentio "[RD+]" (cached) and "[RD download]", AIOStreams and Comet "[RD⚡]" and "[RD⏳]",
+// MediaFusion "⚡RD". The code must stand alone, so "[RDX]" or "HDR" isn't one.
+private val debridCodes = debridServices.joinToString("|") { it.first }
+private val debridTag = Regex("\\[($debridCodes)\\s*(\\+|⚡️?|⏳|download)?]\\s*", RegexOption.IGNORE_CASE)
+private val debridFlash = Regex("(⚡️?)\\s*($debridCodes)\\b")
+
+/**
+ * The debrid service from a source's name, else from its link (Torrentio's /resolve/realdebrid/…, or the service's
+ * own download host). Null for a direct link or a service it doesn't know.
+ */
+internal fun debridOf(name: String, url: String): Debrid? {
+    fun service(code: String) = debridServices.first { it.first.equals(code, ignoreCase = true) }
+    debridTag.find(name)?.let { m ->
+        val mark = m.groupValues[2].lowercase()
+        val cached = when { mark == "+" || mark.startsWith("⚡") -> true; mark == "⏳" || mark == "download" -> false; else -> null }
+        return service(m.groupValues[1]).let { Debrid(it.second, it.first, cached) }
+    }
+    debridFlash.find(name)?.let { m -> return service(m.groupValues[2]).let { Debrid(it.second, it.first, true) } }
+    val link = url.lowercase()
+    return debridServices.firstOrNull { (_, _, hosts) -> hosts.any { it in link } }?.let { Debrid(it.second, it.first, null) }
+}
 
 internal fun runtime(text: String): String {
     // "147 min", or "2h35min" / "2h 35m" as some addons write it.

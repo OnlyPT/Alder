@@ -251,6 +251,7 @@ class MainActivity : Screen() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         profile = Profiles.active(this) ?: return switchProfile()
+        main.postDelayed({ if (!isFinishing) whatsNewOnce() }, WHATS_NEW_WAIT)
         // Last launch's first cinema title: start its art and logo now, while the library is still being read.
         getSharedPreferences("home", MODE_PRIVATE).let { prefs ->
             Images.prefetch(prefs.getString("art:${profile.id}", null), artW, urgent = true, look = shaded)
@@ -1458,6 +1459,27 @@ class MainActivity : Screen() {
         }
     }
 
+    /** Hold OK on a Continue Watching title: choose a source yourself, or take the title off the row. */
+    private fun continueMenu(item: Item) {
+        choose(item.name, listOf("Choose a source", "Remove from Continue Watching")) { selected ->
+            if (selected == 0) return@choose play(item, pick = true)
+            val original = library.firstOrNull { it.optString("_id") == item.id } ?: return@choose
+            val updated = JSONObject(original.toString())
+            val offset = Library.hideFromContinueWatching(updated)
+            background({ Stremio.saveLibrary(profile.authKey, listOf(updated)) }) { result ->
+                result.fold({
+                    Settings.setHidden(this, Settings.hidden(this)
+                        .put(item.id, JSONObject().put("name", item.name).put("timeOffset", offset)))
+                    library = library.map { if (it.optString("_id") == item.id) updated else it }
+                    refreshLibrary?.invoke() // the row (and Google TV's) is drawn again without it
+                }) { error ->
+                    forgetIfSessionGone(error)
+                    if (!isFinishing) choose("Couldn't remove it", listOf("OK"), "Check the connection and try again.") { }
+                }
+            }
+        }
+    }
+
     // ---------- rows ----------
 
     /** The rest of a list already in hand, a page at a time: a row of hundreds of cards would be slow to build. */
@@ -1742,7 +1764,7 @@ class MainActivity : Screen() {
                 }
                 setOnClickListener { openDetails(item) }
                 if (grid) setOnLongClickListener { listMenu(item); true }
-                else if (item.resume) setOnLongClickListener { play(item, pick = true); true }
+                else if (item.resume) setOnLongClickListener { continueMenu(item); true }
             }
 
             private var showing: Boolean? = null
@@ -1942,6 +1964,21 @@ class MainActivity : Screen() {
         return y
     }
 
+    /**
+     * "What's new" once after an update, on whichever profile opens Home first: never on a fresh install, and once per
+     * version. Versions before this one kept no record, so an update is told from an install by the package's dates.
+     */
+    private fun whatsNewOnce() {
+        val prefs = getSharedPreferences("app", MODE_PRIVATE)
+        val version = Updates.mine(this)
+        val seen = prefs.getString("seenVersion", null)
+        if (seen == version) return
+        prefs.edit().putString("seenVersion", version).apply()
+        val info = packageManager.getPackageInfo(packageName, 0)
+        if (seen == null && info.firstInstallTime == info.lastUpdateTime) return // installed, not updated
+        whatsNew(version, quiet = true)
+    }
+
     // Signed out elsewhere (or the session expired): the profile stays, with its settings, and signs in again.
     private fun forgetIfSessionGone(error: Throwable) {
         if ((error as? Stremio.ApiException)?.code != Stremio.NO_SESSION || isFinishing) return
@@ -1953,6 +1990,7 @@ class MainActivity : Screen() {
 
     private companion object {
         const val HEADER_H = 76 // dp
+        const val WHATS_NEW_WAIT = 1_500L // ms after Home opens: its first row draws before the pop-up covers it
         // 2:3 posters, six and a bit across (56 + 7 × 120 + 6 × 16 = 992 of 960 dp): the seventh runs off the edge to
         // say there's more, like the TV apps the layout follows.
         const val CARD_W = POSTER_W

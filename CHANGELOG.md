@@ -20,6 +20,8 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - **All audio languages.** **Settings → Picture & Sound → Audio language** has all the languages. Before, it had only 7. Frequently used languages are at the top.
 - **Alder keeps your choices from the player.** Select an audio language or subtitles in **Audio & subtitles**. The next episode starts with your choice. When you start the title again, it also starts with your choice. Each profile keeps its own choices.
 - When Alder changes to a different source, your subtitle choice stays.
+- **See your subtitles quickly.** When the player controls show, a line under the progress bar shows the audio language and the subtitles. For example: "English · Spanish subtitles".
+- In **Audio & subtitles**, each heading shows the choice in use. For example: "Subtitles · Spanish". A dot shows the choice in use in each list.
 - Alder matches language names from all sources, for example "es", "spa" and "Spanish". Before, some subtitles and audio tracks did not match.
 - **Portuguese (Brazil)** and **Portuguese** are 2 different languages.
 - An add-on subtitle in your language does not start the video again.
@@ -43,6 +45,17 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - Alder tells you when an add-on has only links for a browser or YouTube.
 - Alder sends its name and version to add-ons. Before, some add-ons blocked Alder.
 - Sources with only Dolby Vision show on all TVs. When your TV cannot show them correctly, they are at the end of the list.
+- **What is new after each update.** After Alder updates, Home shows the changes in the new version. Select **See all changes** to read all of them. Select **Settings → About → What's new** to read them again.
+- **Updates on Fire TV.** Alder does not stop when it asks for permission to install an update. When the TV has no page for this permission, Alder shows the steps.
+- After you let Alder install apps, the update continues. Before, you had to select **Install** again.
+- When the download of an update stops or is not complete, Alder tells you. Before, nothing happened.
+- Before an update, Alder tells you that it closes. Open Alder again after the update.
+- **Remove titles from Continue Watching.** Hold OK on a title in **Continue**. Then select **Remove from Continue Watching**. Stremio also removes it on your other devices. When you watch the title again, it comes back.
+- **Put back removed titles.** Select **Settings → Profile → Hidden from Continue Watching**. Then select a title. The title goes back to **Continue** at the position where you stopped. The list shows only titles that you removed on this TV.
+- Hold OK on a title in **Continue** now opens a menu. To see all sources, select **Choose a source**.
+- **See the debrid service of each source.** The source list shows the service of each source, for example **RD** for Real-Debrid. **⚡** shows that the file is ready and starts immediately.
+- The player shows the debrid service of the source that plays, for example "Torrentio · 2160p · Real-Debrid".
+- **All catalogs from AIOMetadata show.** Before, Alder did not show a catalog that needs a genre, for example an AIOMetadata catalog that is not on the Stremio home page. Now Alder shows these catalogs, as Stremio does. This also corrects a **Shows** page with no rows.
 
 ## 1.1
 
