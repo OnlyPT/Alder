@@ -227,6 +227,21 @@ abstract class Screen : Activity() {
     /** Solid fallback until a title's art is available. */
     private fun mood() = rounded(BASE, 0)
 
+    /** Black on white with the standard 4-module quiet zone, whole pixels per module so it stays sharp. */
+    protected fun qrBitmap(text: String, maxPx: Int): Bitmap {
+        val m = Qr.encode(text)
+        val n = m.size + 8
+        val px = maxOf(1, maxPx / n)
+        val bmp = Bitmap.createBitmap(n * px, n * px, Bitmap.Config.RGB_565)
+        bmp.eraseColor(TEXT)
+        val canvas = Canvas(bmp)
+        val paint = Paint().apply { color = BASE }
+        for (r in m.indices) for (c in m.indices) if (m[r][c]) {
+            canvas.drawRect(((c + 4) * px).toFloat(), ((r + 4) * px).toFloat(), ((c + 5) * px).toFloat(), ((r + 5) * px).toFloat(), paint)
+        }
+        return bmp
+    }
+
     protected fun rounded(color: Int, radiusDp: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radiusDp).toFloat() }
 
     /** House Lights' single glass recipe; focus brightens the face (no rim: dots are the only indicator). */

@@ -36,6 +36,11 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - The sign-in page tells you how to connect 2 accounts with 1 phone.
 - **Add-ons with an http:// address work.** Alder connects to add-ons and sources with an http:// address, for example add-ons on your home network. Before, all of these failed.
 - **Alder tells you why there is no source.** For example, an add-on did not answer, or an add-on found only torrents.
+- **Set up an add-on from your phone.** When an add-on finds only torrents, Alder shows a QR code. Scan it to open the settings of the add-on. Add a debrid service there, for example Real-Debrid. Then select **Try again**.
+- When an add-on refuses its key or sign-in, Alder shows a QR code for the settings of the add-on.
+- When there is no source, select **Try again**. Alder gets the sources again.
+- Alder tells you when your add-ons do not have sources for this type of title. Before, Alder told you that no stream add-ons were connected.
+- Alder tells you when an add-on has only links for a browser or YouTube.
 - Alder sends its name and version to add-ons. Before, some add-ons blocked Alder.
 - Sources with only Dolby Vision show on all TVs. When your TV cannot show them correctly, they are at the end of the list.
 

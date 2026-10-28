@@ -30,6 +30,9 @@ class Addon(val descriptor: JSONObject) {
     /** What a profile lends when it shares its streaming sources: its own stream add-ons, not Stremio's or personal ones. */
     val shareable get() = !official && providesStreams && !personal
     private val base = transportUrl.removeSuffix("/manifest.json")
+    /** Its settings page, when it has one (`behaviorHints.configurable`): this install's, so its current setup opens. */
+    val configureUrl: String? = base.takeIf { manifest.optJSONObject("behaviorHints")?.optBoolean("configurable") == true }
+        ?.let { "$it/configure" }
 
     /** [pages]: the catalog takes Stremio's `skip` extra, so a row can ask for the titles after the first page. */
     class Catalog(val addon: Addon, val type: String, val id: String, val name: String, val pages: Boolean, val genres: List<String>)
@@ -124,14 +127,26 @@ class Addon(val descriptor: JSONObject) {
             .optJSONArray("metas").objects().map(::Meta)
     }
 
-    /** Playable streams only: torrent-only results (no url) need a streaming server, which this app doesn't have. */
+    /**
+     * Playable streams only: torrent-only results (no url) need a streaming server, which this app doesn't have. An error
+     * answer throws [HttpError], so a refused key reads as that rather than as no sources; a 404 is just none.
+     */
     fun streams(type: String, videoId: String): Streams {
-        val all = get(false, "stream", type, videoId).optJSONArray("streams").objects()
-        return Streams(all.mapNotNull { Stream.from(it) }, all.count { it.text("url") == null && it.text("infoHash") != null })
+        val all = try {
+            get(false, "stream", type, videoId, strict = true).optJSONArray("streams").objects()
+        } catch (e: HttpError) {
+            if (e.code == 404) emptyList<JSONObject>() else throw e
+        }
+        return Streams(all.mapNotNull { Stream.from(it) },
+            all.count { it.text("url") == null && it.text("infoHash") != null },
+            all.count { it.text("url") == null && it.text("infoHash") == null && (it.text("externalUrl") ?: it.text("ytId")) != null })
     }
 
-    /** [torrents]: results Alder can't play, a torrent with no debrid link (an infoHash, no url); counted to say why. */
-    class Streams(val playable: List<Stream>, val torrents: Int)
+    /**
+     * What Alder can't play, counted to say why: [torrents], a torrent with no debrid link (an infoHash, no url), and
+     * [links], a page for a browser or a YouTube video (externalUrl, ytId).
+     */
+    class Streams(val playable: List<Stream>, val torrents: Int, val links: Int)
 
     /** Subtitle files for one video (OpenSubtitles and co. through Stremio's `subtitles` resource). */
     fun subtitles(type: String, videoId: String): List<Subtitle> =
@@ -142,7 +157,7 @@ class Addon(val descriptor: JSONObject) {
     // Ids such as "tt0903747:1:2" keep their colons, like Stremio's own requests.
     private fun url(path: Array<out String>) = base + "/" + path.joinToString("/") { Uri.encode(it, ":=") } + ".json"
 
-    private fun get(keep: Boolean, vararg path: String) = JSONObject(Http.get(url(path), keep))
+    private fun get(keep: Boolean, vararg path: String, strict: Boolean = false) = JSONObject(Http.get(url(path), keep, strict = strict))
 
     private fun saved(vararg path: String) = Http.savedAnswer(url(path))?.let { runCatching { JSONObject(it) }.getOrNull() }
 
@@ -219,7 +234,7 @@ class Stream(
 ) {
     /**
      * False for addon "actions" dressed up as streams, such as MyTrakt's "Mark Watched" (a 27 KB placeholder file).
-     * They stay listed but are never picked or focused first. Unknown size counts as a video.
+     * They're left out of the list and never picked. Unknown size counts as a video.
      */
     val isVideo get() = size == 0L || size >= 50L * 1024 * 1024
 
