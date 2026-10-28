@@ -14,6 +14,11 @@ Write every entry in ASD-STE100 Simplified Technical English (STE):
 
 Put changes that are not released under `## Unreleased`. Before each release, read all of `## Unreleased` again and rewrite each entry that does not obey these rules. Then rename that heading to the version number.
 
+## Unreleased
+
+### New
+- **30 GB file limit.** Select **30 GB** in **Settings → Largest file**.
+
 ## 1.2
 
 ### New
