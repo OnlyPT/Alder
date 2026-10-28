@@ -1,10 +1,7 @@
 package dev.alder
 
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -733,21 +730,6 @@ class ProfilesActivity : Screen() {
             done.marginTop(24)
         ).apply { gravity = Gravity.CENTER_VERTICAL }, dp(55), 0.9f, 1.1f), onboardingBackdrop())
         done.requestFocus()
-    }
-
-    /** Black on white with the standard 4-module quiet zone, whole pixels per module so it stays sharp. */
-    private fun qrBitmap(text: String, maxPx: Int): Bitmap {
-        val m = Qr.encode(text)
-        val n = m.size + 8
-        val px = maxOf(1, maxPx / n)
-        val bmp = Bitmap.createBitmap(n * px, n * px, Bitmap.Config.RGB_565)
-        bmp.eraseColor(TEXT)
-        val canvas = Canvas(bmp)
-        val paint = Paint().apply { color = BASE }
-        for (r in m.indices) for (c in m.indices) if (m[r][c]) {
-            canvas.drawRect(((c + 4) * px).toFloat(), ((r + 4) * px).toFloat(), ((c + 5) * px).toFloat(), ((r + 5) * px).toFloat(), paint)
-        }
-        return bmp
     }
 
     private companion object {

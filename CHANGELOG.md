@@ -28,6 +28,11 @@ Put changes that are not released under `## Unreleased
 ### Easier to use
 - **See your subtitles quickly.** When the player controls show, a line under the progress bar shows the audio language and the subtitles. For example: "English · Spanish subtitles".
 - **Alder tells you why there is no source.** For example, an add-on did not answer, or an add-on found only torrents.
+- **Set up an add-on from your phone.** When an add-on finds only torrents, Alder shows a QR code. Scan it to open the settings of the add-on. Add a debrid service there, for example Real-Debrid. Then select **Try again**.
+- When an add-on refuses its key or sign-in, Alder shows a QR code for the settings of the add-on.
+- When there is no source, select **Try again**. Alder gets the sources again.
+- Alder tells you when your add-ons do not have sources for this type of title. Before, Alder told you that no stream add-ons were connected.
+- Alder tells you when an add-on has only links for a browser or YouTube.
 - **The player shows the debrid service.** For example: "Torrentio · 2160p · Real-Debrid".
 - In **Audio & subtitles**, each heading shows the choice in use. For example: "Subtitles · Spanish". A dot shows the choice in use in each list.
 - Hold OK on a title in **Continue** to open a menu. To see all sources, select **Choose a source**.

@@ -139,22 +139,39 @@ class StreamsActivity : Screen() {
         val tv = Device.of(this)
 
         val lenders = Profiles.streamLenders(this)
+        // Asks every add-on again (a fixed connection, or an add-on set up again on the phone); a source found plays.
+        fun tryAgain(focus: Boolean = true) {
+            val again = pill("Try again").apply { setOnClickListener { recreate() } }
+            rows.addView(again, wrap().apply { marginStart = dp(12); topMargin = dp(16); bottomMargin = dp(12) })
+            if (focus) again.requestFocus()
+        }
         background({
-            val own = Stremio.addons(key).filter { it.serves("stream", type, videoId) }
-            val household = lenders.flatMap { lender ->
+            val own = Stremio.addons(key).filter { it.providesStreams }
+            val lent = lenders.flatMap { lender ->
                 runCatching {
-                    (Stremio.savedAddons(lender.authKey) ?: Stremio.addons(lender.authKey))
-                        .filter { it.shareable && it.serves("stream", type, videoId) }
+                    (Stremio.savedAddons(lender.authKey) ?: Stremio.addons(lender.authKey)).filter { it.shareable }
                 }.getOrDefault(emptyList())
-            }.distinctBy { it.id }
-            household + own.filterNot { mine -> household.any { it.id == mine.id } }
+            }
+            val household = lent.filter { it.serves("stream", type, videoId) }.distinctBy { it.id }
+            // Whether any stream add-on is installed besides Stremio's own (Local Files has a stream resource): if so, none
+            // of them knows this kind of title.
+            (household + own.filter { it.serves("stream", type, videoId) }.filterNot { mine -> household.any { it.id == mine.id } }) to
+                (own.any { !it.official } || lent.isNotEmpty())
         }) { result ->
-            val addons = result.getOrElse { status.text = "Couldn't load sources. Check your connection and try again."; return@background }
-            if (addons.isEmpty()) { status.text = "No stream add-ons are connected. Add one in Stremio to find sources."; return@background }
+            val (addons, anyStreams) = result.getOrElse {
+                status.text = "Couldn't load sources. Check your connection and try again."
+                return@background tryAgain()
+            }
+            if (addons.isEmpty()) {
+                status.text = if (anyStreams) "None of your add-ons have sources for this kind of title. Add one that does in Stremio."
+                    else "No stream add-ons are connected. Add one in Stremio to find sources."
+                return@background tryAgain()
+            }
             val answers = arrayOfNulls<List<Stream>>(addons.size)
             // Why an add-on gave nothing to play, so an empty list can say so instead of blaming the TV.
             val failures = arrayOfNulls<Throwable>(addons.size)
             val torrents = IntArray(addons.size)
+            val links = IntArray(addons.size)
             var started = false
             var listed = false
             var waitingForEarlier = false
@@ -166,15 +183,21 @@ class StreamsActivity : Screen() {
                 val shown = audio?.let { lang -> ordered.filter { speaks(it, lang) } } ?: ordered
                 count.text = "${shown.size} " + if (shown.size == 1) "source" else "sources"
                 rows.removeAllViews()
+                cols.visibility = if (shown.isEmpty()) View.GONE else View.VISIBLE
                 if (shown.isEmpty()) {
                     rows.addView(text("No playable sources found.", BODY, color = TEXT_2).onArt().apply {
                         setPadding(dp(12), dp(12), 0, 0)
                     })
                     val unplayable = answers.sumOf { a -> a.orEmpty().count { it.isVideo && !it.playableOn(tv) } }
-                    emptyReasons(addons.map { it.name }, failures, torrents, unplayable).forEach { line ->
+                    noSourceReasons(addons.map { it.name }, failures, torrents, links, unplayable).forEach { line ->
                         rows.addView(text(line, SMALL, color = TEXT_2).onArt().apply { setPadding(dp(12), dp(8), dp(12), 0) },
                             LinearLayout.LayoutParams(-1, -2))
                     }
+                    // The first add-on a phone can fix: it found only torrents (no debrid service yet) or refused its key.
+                    addons.indices.firstOrNull { i ->
+                        addons[i].configureUrl != null && (failures[i]?.let(::refusedKey) ?: (torrents[i] > 0))
+                    }?.let { i -> setupCode(addons[i], torrentsOnly = failures[i] == null)?.let { rows.addView(it, LinearLayout.LayoutParams(-1, -2)) } }
+                    tryAgain(focusList)
                 } else {
                     val best = eligible.firstOrNull { it in shown }
                     shown.forEach { stream -> rows.addView(streamRow(stream, providers[stream].orEmpty(), stream === best),
@@ -214,6 +237,7 @@ class StreamsActivity : Screen() {
                         android.util.Log.w("Alder", "streams from ${addon.name} failed", e)
                     }
                     torrents[i] = streams.getOrNull()?.torrents ?: 0
+                    links[i] = streams.getOrNull()?.links ?: 0
                     answers[i] = streams.getOrNull()?.playable.orEmpty()
                     if (answers.all { it != null }) {
                         if (pick || listed) showList() else tryStart()
@@ -271,30 +295,26 @@ class StreamsActivity : Screen() {
         Locale(code).getDisplayLanguage(Locale.getDefault()).ifBlank { code }.replaceFirstChar { it.titlecase(Locale.getDefault()) }
 
     /**
-     * What went wrong when nothing is playable: add-ons that failed (and how), add-ons that only found torrents (they
-     * need a debrid service), and sources in a format this TV can't decode. Plain words, one line each.
+     * A QR code for [addon]'s settings page, to set it up on a phone: a debrid service when it found [torrentsOnly], a new
+     * key when it refused this one. It opens a fresh setup (see [Addon.configureUrl]); null if the address is too long
+     * for a code.
      */
-    private fun emptyReasons(names: List<String>, failures: Array<Throwable?>, torrents: IntArray, unplayable: Int): List<String> {
-        val failed = names.indices.filter { failures[it] != null }.map { "${names[it]} (${reason(failures[it]!!)})" }
-        val torrentOnly = names.indices.filter { failures[it] == null && torrents[it] > 0 }.map { names[it] }
-        return listOfNotNull(
-            failed.takeIf { it.isNotEmpty() }?.let {
-                "Couldn't get sources from ${it.joinToString(", ")}. Check the add-on in Stremio, or try again later."
-            },
-            torrentOnly.takeIf { it.isNotEmpty() }?.let {
-                "${it.joinToString(", ")} found only torrents. Alder plays them through a debrid service: connect one in the add-on's settings."
-            },
-            unplayable.takeIf { it > 0 }?.let { "$it ${if (it == 1) "source needs" else "sources need"} a video format this TV can't decode." },
-        ).ifEmpty { listOf("Your add-ons have no sources for this title.") }
-    }
-
-    private fun reason(e: Throwable): String = when (e) {
-        is java.net.SocketTimeoutException -> "timed out"
-        is java.net.UnknownHostException -> "address not found"
-        is java.net.ConnectException -> "connection refused"
-        is javax.net.ssl.SSLException -> "secure connection failed"
-        is org.json.JSONException -> "not a source list"
-        else -> e.message?.takeIf { it.length <= 40 } ?: "error"
+    private fun setupCode(addon: Addon, torrentsOnly: Boolean): View? {
+        val page = addon.configureUrl ?: return null
+        val code = runCatching { qrBitmap(page, dp(112)) }.getOrNull() ?: return null
+        return LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(14), dp(12), 0)
+            addView(ImageView(context).apply {
+                setImageBitmap(code); background = rounded(TEXT, 8); setPadding(dp(4), dp(4), dp(4), dp(4))
+            }, wrap())
+            addView(column(Gravity.START,
+                text("Scan with your phone to set up ${addon.name}", BODY, bold = true).onArt(),
+                text(if (torrentsOnly) "Add a debrid account there, such as Real-Debrid, and install it again. Then select Try again."
+                    else "Enter a new key or sign in again there, and install it again. Then select Try again.",
+                    SMALL, color = TEXT_2).onArt().marginTop(6),
+            ), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(16) })
+        }
     }
 
     /**
@@ -449,4 +469,43 @@ internal fun sourceSummary(s: Stream): String {
         else -> null
     }
     return listOfNotNull(release, codec, audio).joinToString(" · ")
+}
+
+/**
+ * What went wrong when nothing is playable, one plain line each: add-ons that failed (and how), add-ons that only found
+ * torrents (they need a debrid service) or only links for a browser or YouTube, and sources in a format this TV can't
+ * decode.
+ */
+internal fun noSourceReasons(names: List<String>, failures: Array<Throwable?>, torrents: IntArray, links: IntArray, unplayable: Int): List<String> {
+    val failed = names.indices.filter { failures[it] != null }.map { "${names[it]} (${failureReason(failures[it]!!)})" }
+    val torrentOnly = names.indices.filter { failures[it] == null && torrents[it] > 0 }.map { names[it] }
+    val linkOnly = names.indices.filter { failures[it] == null && torrents[it] == 0 && links[it] > 0 }.map { names[it] }
+    return listOfNotNull(
+        failed.takeIf { it.isNotEmpty() }?.let {
+            "Couldn't get sources from ${it.joinToString(", ")}. Try again, or check the add-on in Stremio."
+        },
+        torrentOnly.takeIf { it.isNotEmpty() }?.let {
+            "${it.joinToString(", ")} found only torrents. A TV plays torrents through a debrid service, such as Real-Debrid, " +
+                "connected in the add-on's settings."
+        },
+        linkOnly.takeIf { it.isNotEmpty() }?.let {
+            "${it.joinToString(", ")} only has links that open in a browser or on YouTube, which Alder can't play."
+        },
+        unplayable.takeIf { it > 0 }?.let { "$it ${if (it == 1) "source needs" else "sources need"} a video format this TV can't decode." },
+    ).ifEmpty { listOf("Your add-ons have no sources for this title.") }
+}
+
+/** An add-on refused the request: its key or account expired, or was never set up. */
+internal fun refusedKey(e: Throwable) = e is HttpError && (e.code == 401 || e.code == 403)
+
+internal fun failureReason(e: Throwable): String = when {
+    refusedKey(e) -> "key or sign-in refused"
+    e is HttpError && e.code == 429 -> "too many requests"
+    e is HttpError && e.code >= 500 -> "having problems"
+    e is java.net.SocketTimeoutException -> "timed out"
+    e is java.net.UnknownHostException -> "address not found"
+    e is java.net.ConnectException -> "connection refused"
+    e is javax.net.ssl.SSLException -> "secure connection failed"
+    e is org.json.JSONException -> "not a source list"
+    else -> e.message?.takeIf { it.length <= 40 } ?: "error"
 }

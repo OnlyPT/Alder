@@ -22,17 +22,19 @@ object Http {
     /** Set once at start with the app's version. */
     var userAgent = "Alder"
 
-    fun get(url: String, keep: Boolean = false, timeoutMs: Int = 20_000): String = text(url, null, keep, timeoutMs)
+    /** [strict]: an error answer throws [HttpError] even when its body is JSON (add-ons, not Stremio's API, read so). */
+    fun get(url: String, keep: Boolean = false, timeoutMs: Int = 20_000, strict: Boolean = false): String =
+        text(url, null, keep, timeoutMs, strict)
 
     fun post(url: String, json: String, keep: Boolean = false): String = text(url, json, keep)
 
     fun bytes(url: String): ByteArray = request(url, null, cache = true).second
 
-    private fun text(url: String, json: String?, keep: Boolean, timeoutMs: Int = 20_000): String {
+    private fun text(url: String, json: String?, keep: Boolean, timeoutMs: Int = 20_000, strict: Boolean = false): String {
         val (code, body) = request(url, json, cache = false, timeoutMs)
         val text = String(body, Charsets.UTF_8)
         // Stremio's API answers errors as JSON (read by the caller); anything else failed is an error page: say the code.
-        if (code >= 400 && !text.trimStart().startsWith("{")) throw IOException("HTTP $code")
+        if (code >= 400 && (strict || !text.trimStart().startsWith("{"))) throw HttpError(code)
         return text.also { if (keep && code < 400) keep(url, json, it) }
     }
 
@@ -91,7 +93,10 @@ object Http {
         }
         // Stremio's API puts its JSON error in the body of a failed response too, so read it either way.
         val code = c.responseCode
-        val stream = (if (code < 400) c.inputStream else c.errorStream) ?: throw IOException("HTTP $code")
+        val stream = (if (code < 400) c.inputStream else c.errorStream) ?: throw HttpError(code)
         return code to stream.use { it.readBytes() }
     }
 }
+
+/** A failed answer, with its status code: 401 and 403 from an add-on usually mean an expired key or account. */
+class HttpError(val code: Int) : IOException("HTTP $code")
