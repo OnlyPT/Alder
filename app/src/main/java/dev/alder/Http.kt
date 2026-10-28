@@ -93,7 +93,7 @@ object Http {
         }
         // Stremio's API puts its JSON error in the body of a failed response too, so read it either way.
         val code = c.responseCode
-        val stream = (if (code < 400) c.inputStream else c.errorStream) ?: throw IOException("HTTP $code")
+        val stream = (if (code < 400) c.inputStream else c.errorStream) ?: throw HttpError(code)
         return code to stream.use { it.readBytes() }
     }
 }

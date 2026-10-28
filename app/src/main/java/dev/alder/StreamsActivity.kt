@@ -140,10 +140,10 @@ class StreamsActivity : Screen() {
 
         val lenders = Profiles.streamLenders(this)
         // Asks every add-on again (a fixed connection, or an add-on set up again on the phone); a source found plays.
-        fun tryAgain() {
+        fun tryAgain(focus: Boolean = true) {
             val again = pill("Try again").apply { setOnClickListener { recreate() } }
             rows.addView(again, wrap().apply { marginStart = dp(12); topMargin = dp(16); bottomMargin = dp(12) })
-            again.requestFocus()
+            if (focus) again.requestFocus()
         }
         background({
             val own = Stremio.addons(key).filter { it.providesStreams }
@@ -197,7 +197,7 @@ class StreamsActivity : Screen() {
                     addons.indices.firstOrNull { i ->
                         addons[i].configureUrl != null && (failures[i]?.let(::refusedKey) ?: (torrents[i] > 0))
                     }?.let { i -> setupCode(addons[i], torrentsOnly = failures[i] == null)?.let { rows.addView(it, LinearLayout.LayoutParams(-1, -2)) } }
-                    tryAgain()
+                    tryAgain(focusList)
                 } else {
                     val best = eligible.firstOrNull { it in shown }
                     shown.forEach { stream -> rows.addView(streamRow(stream, providers[stream].orEmpty(), stream === best),
@@ -296,14 +296,12 @@ class StreamsActivity : Screen() {
 
     /**
      * A QR code for [addon]'s settings page, to set it up on a phone: a debrid service when it found [torrentsOnly], a new
-     * key when it refused this one. An address too long for a code falls back to the add-on's own page, a fresh setup;
-     * null if that's too long as well.
+     * key when it refused this one. It opens a fresh setup (see [Addon.configureUrl]); null if the address is too long
+     * for a code.
      */
     private fun setupCode(addon: Addon, torrentsOnly: Boolean): View? {
         val page = addon.configureUrl ?: return null
-        val code = runCatching { qrBitmap(page, dp(112)) }.recoverCatching {
-            qrBitmap(android.net.Uri.parse(page).let { "${it.scheme}://${it.authority}/configure" }, dp(112))
-        }.getOrNull() ?: return null
+        val code = runCatching { qrBitmap(page, dp(112)) }.getOrNull() ?: return null
         return LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), dp(14), dp(12), 0)

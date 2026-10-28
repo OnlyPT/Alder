@@ -29,6 +29,15 @@ class NoSourceReasonsTest {
             noSourceReasons(listOf("Torrentio"), arrayOf(null), intArrayOf(0), intArrayOf(0), 0))
     }
 
+    @Test fun setupPageLeavesKeysOut() {
+        assertEquals("https://torrentio.strem.fun/configure",
+            freshConfigureUrl("https://torrentio.strem.fun/providers=yts,eztv|realdebrid=ABC123"))
+        assertEquals("https://aiostreams.example/stremio/configure",
+            freshConfigureUrl("https://aiostreams.example/stremio/eyJ1dWlkIjoiMTIzNDU2Nzg5MCJ9eyJ1dWlk"))
+        assertEquals("https://host.example/addon/configure", freshConfigureUrl("https://host.example/addon"))
+        assertEquals("http://192.168.2.10:7000/configure", freshConfigureUrl("http://192.168.2.10:7000"))
+    }
+
     @Test fun plainFailureReasons() {
         assertEquals("key or sign-in refused", failureReason(HttpError(401)))
         assertEquals("too many requests", failureReason(HttpError(429)))

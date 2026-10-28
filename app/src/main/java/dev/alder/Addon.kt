@@ -30,9 +30,12 @@ class Addon(val descriptor: JSONObject) {
     /** What a profile lends when it shares its streaming sources: its own stream add-ons, not Stremio's or personal ones. */
     val shareable get() = !official && providesStreams && !personal
     private val base = transportUrl.removeSuffix("/manifest.json")
-    /** Its settings page, when it has one (`behaviorHints.configurable`): this install's, so its current setup opens. */
+    /**
+     * Its settings page, when it has one (`behaviorHints.configurable`), as a fresh setup: the install's own address
+     * carries its settings and often a debrid key, which a code on the screen mustn't show.
+     */
     val configureUrl: String? = base.takeIf { manifest.optJSONObject("behaviorHints")?.optBoolean("configurable") == true }
-        ?.let { "$it/configure" }
+        ?.let(::freshConfigureUrl)
 
     /**
      * [pages]: the catalog takes Stremio's `skip` extra, so a row can ask for the titles after the first page.
@@ -446,3 +449,15 @@ internal fun runtime(text: String): String {
 }
 
 fun JSONObject.text(key: String): String? = if (isNull(key)) null else optString(key).ifBlank { null }
+
+/**
+ * An add-on's `/configure` page with its settings left out of the address: the path parts that hold them (Torrentio's
+ * "providers=…|realdebrid=KEY", AIOStreams' long encoded blob) go, and the rest of the path stays. ponytail: a guess by
+ * shape (`=`, `|`, `%`, `,` or 24+ characters); an add-on with a short plain key in its path would still show it.
+ */
+internal fun freshConfigureUrl(base: String): String {
+    val start = base.indexOf("://").let { if (it < 0) 0 else it + 3 }
+    val slash = base.indexOf('/', start).let { if (it < 0) base.length else it }
+    val path = base.substring(slash).split('/').filter { seg -> seg.isNotEmpty() && seg.length < 24 && seg.none { it in "=|%," } }
+    return base.substring(0, slash) + path.joinToString("") { "/$it" } + "/configure"
+}
