@@ -52,10 +52,11 @@ class ScreenDesignTest {
     }
 
     @Test fun whatsNewReadsOneVersionsEntries() {
-        val log = "# Changelog\n\n- a rule, not a change\n\n## Unreleased\n\n- Next\n\n## 1.2\n\n- **One.** First\n- Two\n\n## 1.1\n\n- Old\n"
-        assertEquals(listOf("**One.** First", "Two"), changesFor(log, "1.2"))
-        assertEquals(listOf("Next"), changesFor(log, "Unreleased"))
-        assertEquals(emptyList<String>(), changesFor(log, "1.3"))
+        val log = "# Changelog\n\n- a rule, not a change\n\n## Unreleased\n\n- Next\n\n## 1.2\n\n### New\n- **One.** First\n\n### Fixes\n- Two\n\n## 1.1\n\n- Old\n"
+        assertEquals(listOf("**One.** First", "Two"), changesFor(log, "1.2").map { it.text })
+        assertEquals(listOf("New", "Fixes"), changesFor(log, "1.2").map { it.group })
+        assertEquals(listOf(null), changesFor(log, "Unreleased").map { it.group })
+        assertEquals(0, changesFor(log, "1.3").size)
     }
 
     @Test fun debridServiceFromTagsAndLinks() {

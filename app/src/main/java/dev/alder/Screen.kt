@@ -598,23 +598,32 @@ abstract class Screen : Activity() {
         list.addView(text("Alder $version", SERIF_TITLE, serif = true).marginTop(4))
         val entries = column(Gravity.START)
         list.addView(entries, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
-        fun entry(change: String) = text("", BODY, color = TEXT).apply {
-            text = changeLine(change)
+        fun entry(change: Change) = text("", BODY, color = TEXT).apply {
+            text = changeLine(change.text)
             setPadding(dp(10), dp(6), dp(10), dp(6))
             entries.addView(this, LinearLayout.LayoutParams(-1, -2))
         }
+        // The pop-up: the first entries, the most important ones, without their headings.
         changes.take(SHORT_LIST).forEach(::entry)
         val gotIt = pill("Got it").apply { setOnClickListener { dialog.dismiss() } }
         val buttons = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; addView(gotIt) }
         list.addView(buttons, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(16) })
         if (changes.size > SHORT_LIST) buttons.addView(chip("See all changes").apply {
             setOnClickListener {
-                // Taller, every entry, each one a stop for the remote so Down moves through them; Got it at the end.
-                changes.drop(SHORT_LIST).forEach(::entry)
-                (0 until entries.childCount).forEach { entries.getChildAt(it).rowFocus() }
+                // Taller, every entry under its heading, each entry a stop for the remote so Down moves through them;
+                // Got it at the end.
+                entries.removeAllViews()
+                var group: String? = null
+                val rows = changes.map { change ->
+                    if (change.group != null && change.group != group) {
+                        group = change.group
+                        entries.addView(caps(change.group, TUNGSTEN).apply { setPadding(dp(10), dp(14), dp(10), dp(4)) })
+                    }
+                    entry(change).apply { rowFocus() }
+                }
                 buttons.removeView(this)
                 dialog.window?.setLayout(dp(WHATS_NEW_W), resources.displayMetrics.heightPixels * 82 / 100)
-                entries.getChildAt(SHORT_LIST).requestFocus()
+                rows.getOrNull(SHORT_LIST)?.requestFocus()
             }
         }, LinearLayout.LayoutParams(-2, dp(CHIP_H + 6)).apply { marginStart = dp(8) })
         dialog.setContentView(android.widget.ScrollView(this).apply {
@@ -701,12 +710,18 @@ abstract class Screen : Activity() {
     }
 }
 
+/** One changelog entry and the "### " heading it sits under (New, Easier to use, Fixes), null above the first. */
+internal class Change(val group: String?, val text: String)
+
 /** The entries under "## [version]" in CHANGELOG.md, without their "- "; empty when that version has no section. */
-internal fun changesFor(changelog: String, version: String): List<String> {
+internal fun changesFor(changelog: String, version: String): List<Change> {
     val lines = changelog.lines()
     val start = lines.indexOfFirst { it.trim() == "## $version" }.takeIf { it >= 0 } ?: return emptyList()
-    return lines.drop(start + 1).takeWhile { !it.startsWith("## ") }
-        .filter { it.startsWith("- ") }.map { it.removePrefix("- ").trim() }
+    var group: String? = null
+    return lines.drop(start + 1).takeWhile { !it.startsWith("## ") }.mapNotNull { line ->
+        if (line.startsWith("### ")) { group = line.removePrefix("### ").trim(); null }
+        else line.takeIf { it.startsWith("- ") }?.let { Change(group, it.removePrefix("- ").trim()) }
+    }
 }
 
 /** A changelog entry as it reads on screen: **bold** in bold, `code` and the other marks left out. */
