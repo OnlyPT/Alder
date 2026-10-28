@@ -15,51 +15,24 @@ Write every entry in ASD-STE100 Simplified Technical English (STE):
 Put changes that are not released under `## Unreleased
 
 ### New
-- **Sources in your audio language.** Select a language above the source list. Alder shows only the sources in that language. Sources with "Multi" or "Dual" audio show for all languages.
-- **Subtitles in your language.** Select **Settings → Subtitles → Subtitle language**. Then select a language. Each profile keeps its own language. Subtitles in that language start with the video. They also start when the audio is in that language.
-- **Alder keeps your choices from the player.** Select an audio language or subtitles in **Audio & subtitles**. The next episode starts with your choice. When you start the title again, it also starts with your choice. Each profile keeps its own choices.
-- **Remove titles from Continue Watching.** Hold OK on a title in **Continue**. Then select **Remove from Continue Watching**. Stremio also removes it on your other devices. When you watch the title again, it comes back.
-- **See the debrid service of each source.** The source list shows the service of each source, for example **RD** for Real-Debrid. **⚡** shows that the file is ready and starts immediately.
-- **Put back removed titles.** Select **Settings → Profile → Hidden from Continue Watching**. Then select a title. The title goes back to **Continue** at the position where you stopped. The list shows only titles that you removed on this TV.
-- **All audio languages.** **Settings → Picture & Sound → Audio language** has all the languages. Before, it had only 7. Frequently used languages are at the top.
-- **All subtitle languages in the player.** **Audio & subtitles** shows all the languages from your subtitle add-ons. Your subtitle language and English are at the top. Before, Alder showed only the language of the TV and English.
-- **What is new after each update.** After Alder updates, Home shows the most important changes in the new version. Select **See all changes** to read all of them. Select **Settings → About → What's new** to read them again.
+- **Sources in your language.** Select a language above the source list. Alder shows only the sources in that language.
+- **All audio and subtitle languages.** Select them in **Settings**. Each profile keeps its own languages.
+- **Alder keeps your player choices.** The next episode starts with the audio and the subtitles that you selected.
+- **Remove titles from Continue Watching.** Hold OK on a title. To put it back, select **Settings → Profile → Hidden from Continue Watching**.
+- **See the debrid service.** The source list and the player show the service, for example **RD** for Real-Debrid.
 
 ### Easier to use
-- **See your subtitles quickly.** When the player controls show, a line under the progress bar shows the audio language and the subtitles. For example: "English · Spanish subtitles".
-- **Alder tells you why there is no source.** For example, an add-on did not answer, or an add-on found only torrents.
-- **Set up an add-on from your phone.** When an add-on finds only torrents, Alder shows a QR code. Scan it to open the settings of the add-on. Add a debrid service there, for example Real-Debrid. Then select **Try again**.
-- When an add-on refuses its key or sign-in, Alder shows a QR code for the settings of the add-on.
-- When there is no source, select **Try again**. Alder gets the sources again.
-- Alder tells you when your add-ons do not have sources for this type of title. Before, Alder told you that no stream add-ons were connected.
-- Alder tells you when an add-on has only links for a browser or YouTube.
-- **The player shows the debrid service.** For example: "Torrentio · 2160p · Real-Debrid".
-- In **Audio & subtitles**, each heading shows the choice in use. For example: "Subtitles · Spanish". A dot shows the choice in use in each list.
-- Hold OK on a title in **Continue** to open a menu. To see all sources, select **Choose a source**.
-- When **Dubbed releases** is **My language first**, the source list opens on your audio language.
-- When Alder changes to a different source, your subtitle choice stays.
-- The sign-in page tells you how to connect 2 accounts with 1 phone.
-- Lists in **Settings** are not transparent.
+- **Help when there is no source.** Alder tells you why. Scan the QR code to set up the add-on on your phone. Then select **Try again**.
+- **See your subtitles quickly.** The player shows the audio and the subtitles that play.
+- **What's new after each update.** To read it again, select **Settings → About → What's new**.
 
 ### Fixes
-- **Skip forward in more movies.** Alder finds the correct position in files that have no index, for example .ts files. Before, a skip forward on the progress bar started these movies again from the beginning.
-- **Title details with all add-ons.** Alder gets title details from your add-ons in their order, as Stremio does. When an add-on gives no details, Alder uses the next add-on. Before, some users saw "Couldn't load this title's details" on all titles.
-- **Profiles stay after a sign-out.** When Stremio signs a profile out of this TV, Alder keeps the profile. Select the profile and sign in again. The settings and the PIN of the profile stay. Before, Alder removed the profile.
-- **Add-ons with an http:// address work.** Alder connects to add-ons and sources with an http:// address, for example add-ons on your home network. Before, all of these failed.
-- **All catalogs from AIOMetadata show.** Before, Alder did not show a catalog that needs a genre, for example an AIOMetadata catalog that is not on the Stremio home page. Now Alder shows these catalogs, as Stremio does. This also corrects a **Shows** page with no rows.
-- **Updates on Fire TV.** Alder does not stop when it asks for permission to install an update. When the TV has no page for this permission, Alder shows the steps.
-- After you let Alder install apps, the update continues. Before, you had to select **Install** again.
-- When the download of an update stops or is not complete, Alder tells you. Before, nothing happened.
-- Before an update, Alder tells you that it closes. Open Alder again after the update.
-- Some sources cannot skip. In these sources, Alder shows a message, and the movie continues. To get a different source, select **Change stream**.
-- Alder matches language names from all sources, for example "es", "spa" and "Spanish". Before, some subtitles and audio tracks did not match.
-- **Portuguese (Brazil)** and **Portuguese** are 2 different languages.
-- An add-on subtitle in your language does not start the video again.
-- Alder shows a title when an add-on sends an episode that has no id.
-- When you remove a profile, Alder does not sign out a Stremio account that another profile uses.
-- Alder tells you when you add a Stremio account that another profile already uses.
-- Alder sends its name and version to add-ons. Before, some add-ons blocked Alder.
-- Sources with only Dolby Vision show on all TVs. When your TV cannot show them correctly, they are at the end of the list.
+- **Fixed sources that did not show.** Add-ons with an http:// address work. Some add-ons do not block Alder now. Dolby Vision sources show on all TVs.
+- **Fixed skip forward.** Some movies, for example .ts files, do not start again from the beginning.
+- **Fixed empty pages.** When an add-on gives no details, Alder uses the next add-on. All AIOMetadata catalogs show.
+- **Fixed sign-in problems.** A profile stays after Stremio signs it out. Alder tells you when 2 profiles use the same account.
+- **Fixed updates on Fire TV.** Alder does not stop during an update.
+- **Fixed language problems.** Subtitles and audio tracks match in all add-ons.
 
 ## 1.1
 
