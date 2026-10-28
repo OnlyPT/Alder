@@ -12,7 +12,9 @@ Write every entry in ASD-STE100 Simplified Technical English (STE):
 - Put each entry under one heading: `### New`, `### Easier to use` or `### Fixes`, in that order. In each group, put the most important entries first.
 - Start an important entry with a short **bold** name. After an update, Alder shows the first 5 entries. **See all changes** shows all of them under their headings.
 
-Put changes that are not released under `## Unreleased
+Put changes that are not released under `## Unreleased`. Before each release, read all of `## Unreleased` again and rewrite each entry that does not obey these rules. Then rename that heading to the version number.
+
+## 1.2
 
 ### New
 - **Sources in your language.** Select a language above the source list. Alder shows only the sources in that language.

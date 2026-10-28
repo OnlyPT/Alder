@@ -641,10 +641,19 @@ abstract class Screen : Activity() {
                 rows.getOrNull(SHORT_LIST)?.requestFocus()
             }
         }, LinearLayout.LayoutParams(-2, dp(CHIP_H + 6)).apply { marginStart = dp(8) })
-        dialog.setContentView(android.widget.ScrollView(this).apply {
-            isVerticalScrollBarEnabled = false
+        // The glass on a frame that clips to its rounded shape, so lines scrolled past the top don't show over its edge.
+        dialog.setContentView(FrameLayout(this).apply {
             background = glassOver(this, 16)
-            addView(list)
+            outlineProvider = object : android.view.ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: android.graphics.Outline) =
+                    outline.setRoundRect(0, 0, view.width, view.height, dp(16).toFloat())
+            }
+            clipToOutline = true
+            // Inset from the glass's top and bottom: lines scrolled out of view are cut off inside the panel.
+            addView(android.widget.ScrollView(context).apply {
+                isVerticalScrollBarEnabled = false
+                addView(list)
+            }, FrameLayout.LayoutParams(-1, -1).apply { topMargin = dp(12); bottomMargin = dp(12) })
         })
         dialog.window?.apply {
             setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
