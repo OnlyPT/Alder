@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.RadialGradient
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
@@ -90,6 +91,32 @@ internal fun nextCatalogSection(total: Int, loaded: Int) = minOf(total, loaded +
 internal fun catalogAnswerKey(page: String, title: String, genre: String?, sources: List<String>) =
     (listOf(page, title, genre.orEmpty()) + sources).joinToString("\u0000")
 
+/**
+ * Catalog and title types that are live: TV channels, sport and events. Other types (anime, YouTube's video channels,
+ * podcasts) have no page.
+ */
+internal fun isLiveType(type: String) = type.lowercase() in setOf("tv", "live", "sport", "sports", "event", "events")
+
+/**
+ * A channel logo's colour, for the wash behind it when the channel has no art: the average of its colourful opaque
+ * pixels, dimmed so white words still read over it. Null for a logo with no colour to speak of (white, black, grey).
+ */
+internal fun logoTint(pixels: IntArray): Int? {
+    val opaque = pixels.filter { it ushr 24 >= 128 }
+    val colourful = opaque.filter { p ->
+        val r = p ushr 16 and 255; val g = p ushr 8 and 255; val b = p and 255
+        val max = maxOf(r, g, b); val min = minOf(r, g, b)
+        max >= 40 && (max - min) >= 0.35f * max
+    }
+    if (colourful.isEmpty() || colourful.size * 20 < opaque.size) return null
+    val r = colourful.sumOf { it ushr 16 and 255 } / colourful.size
+    val g = colourful.sumOf { it ushr 8 and 255 } / colourful.size
+    val b = colourful.sumOf { it and 255 } / colourful.size
+    val scale = 120f / maxOf(r, g, b, 1)
+    return (0xFF shl 24) or ((r * scale).toInt().coerceAtMost(255) shl 16) or
+        ((g * scale).toInt().coerceAtMost(255) shl 8) or (b * scale).toInt().coerceAtMost(255)
+}
+
 // Home for the profile in use, built to feel like a cinema rather than a catalogue. The whole screen is one title's
 // art: sharp where nothing sits on it, with light shading behind text and cards.
 //  - Browse (every page, Home opening on Continue Watching): one row of wide 16:9 art cards along the bottom, the
@@ -116,6 +143,8 @@ class MainActivity : Screen() {
     private val navItems = mutableMapOf<Page, TextView>()
     private var page = Page.HOME
     private val Page.isCatalog get() = this == Page.SHOWS || this == Page.MOVIES
+    /** One row of cards under the focused title's art: every page but My List's grid. */
+    private val Page.isBrowse get() = this == Page.HOME || isCatalog || this == Page.LIVE
     private var mode = Mode.BROWSE
     private var library: List<JSONObject> = emptyList()
     // ponytail: row answers this session, including their catalogs; unbounded, but a few hundred titles per page.
@@ -142,9 +171,7 @@ class MainActivity : Screen() {
     // Not glass: a light darkening of the art's top edge while the top bar shows. The left and bottom shades are painted
     // into the art itself ([shaded]).
     private lateinit var topShade: View
-    // Brief row-position cue in the left margin, beside the cards.
-    private lateinit var track: FrameLayout
-    private lateinit var thumb: View
+
     // A chevron in the right margin while the row the remote is in has more cards past the screen's edge.
     private lateinit var moreHint: ImageView
     private lateinit var nextRowHint: TextView
@@ -152,8 +179,7 @@ class MainActivity : Screen() {
     private var captionX = 0 // px from the left margin to the focused card, where its caption goes
     private var browseRowTop = 0
     private var browseRowH = 0
-    private var indicatedRow: View? = null
-    private val hideTrack = Runnable { track.animate().alpha(0f).setDuration(250).start() }
+
     private var artTask = Runnable {}
     private val artW by lazy { resources.displayMetrics.widthPixels }
 
@@ -172,6 +198,32 @@ class MainActivity : Screen() {
         val dh = src.height * scale
         canvas.drawBitmap(src, null, RectF((w - dw) / 2, (h - dh) / 2, (w + dw) / 2, (h + dh) / 2), Paint(Paint.FILTER_BITMAP_FLAG))
         val bright = samplePixels(src, 16, 24)?.let { brightLeft(it, 16) } ?: false
+        shade(canvas, w, h, bright)
+        src.recycle()
+        out.copy(Bitmap.Config.HARDWARE, false).also { out.recycle() }
+    }
+
+    /**
+     * A live channel with no art of its own: the dark base with a soft glow of its logo's colour (the logo itself sits
+     * top left, where a film's title goes), shaded like any other art. A logo without colour leaves the plain base.
+     */
+    private val washed = Images.Look("washed") { src ->
+        val w = artW
+        val h = resources.displayMetrics.heightPixels
+        val tint = samplePixels(src, 24, 24)?.let(::logoTint)
+        src.recycle()
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        canvas.drawColor(BASE)
+        if (tint != null) canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), Paint().apply {
+            shader = RadialGradient(w * 0.7f, h * 0.32f, w * 0.7f, tint and 0x00FFFFFF or (0xB3 shl 24), tint and 0x00FFFFFF, Shader.TileMode.CLAMP)
+        })
+        shade(canvas, w, h, false)
+        out.copy(Bitmap.Config.HARDWARE, false).also { out.recycle() }
+    }
+
+    /** The left darkening behind the words, the long one down to the cards, and a light one under the top bar. */
+    private fun shade(canvas: Canvas, w: Int, h: Int, bright: Boolean) {
         val shade = Paint().apply {
             shader = LinearGradient(0f, 0f, w * 0.55f, 0f,
                 if (bright) 0xF70E0C0A.toInt() else 0xEB0E0C0A.toInt(), 0x000E0C0A, Shader.TileMode.CLAMP)
@@ -186,8 +238,6 @@ class MainActivity : Screen() {
             GradientDrawable(edge, intArrayOf(0x73000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000))
                 .apply { setBounds(0, 0, w, h); draw(canvas) }
         }
-        src.recycle()
-        out.copy(Bitmap.Config.HARDWARE, false).also { out.recycle() }
     }
 
     // Browse: the focused title, top left.
@@ -227,6 +277,7 @@ class MainActivity : Screen() {
         val addedAt: String? = null,
         val finished: Boolean = false,
     ) {
+        val live get() = isLiveType(type) // a channel or event: plays from its card, no title page
         var filled = false
         var settled = false // its details are in (or failed): what it has now is all it will get
         var warming = false
@@ -302,10 +353,6 @@ class MainActivity : Screen() {
             addView(art, FrameLayout.LayoutParams(-1, -1))
             addView(topShade, FrameLayout.LayoutParams(-1, dp(HEADER_H + 180)))
             addView(scroller, FrameLayout.LayoutParams(-1, rowH).apply { topMargin = rowTop })
-            track = FrameLayout(context).apply { alpha = 0f }
-            thumb = View(context).apply { background = rounded(0xB3FFFFFF.toInt(), 2) }
-            track.addView(thumb, FrameLayout.LayoutParams(-1, dp(12)))
-            addView(track, FrameLayout.LayoutParams(dp(2), dp(CARD_H)).apply { leftMargin = dp(PAD) / 2; topMargin = rowTop + headingH + dp(ROW_TOP_ROOM) })
             moreHint = ImageView(context).apply { setImageResource(R.drawable.ic_back); scaleX = -1f; alpha = 0f }
             addView(moreHint, FrameLayout.LayoutParams(dp(32), dp(32), Gravity.END).apply {
                 rightMargin = (dp(PAD) - dp(32)) / 2; topMargin = rowTop + headingH + dp(ROW_TOP_ROOM + CARD_H / 2 - 16)
@@ -520,7 +567,7 @@ class MainActivity : Screen() {
     }
 
     private fun dimHome(on: Boolean) {
-        if ((page != Page.HOME && !page.isCatalog && page != Page.LIBRARY) || mode != Mode.BROWSE || homeDimmed == on) return
+        if ((!page.isBrowse && page != Page.LIBRARY) || mode != Mode.BROWSE || homeDimmed == on) return
         homeDimmed = on
         val alpha = if (on) 0.3f else 1f
         header.animate().alpha(alpha).setDuration(400).start()
@@ -584,8 +631,9 @@ class MainActivity : Screen() {
             setOnFocusChangeListener { _, _ -> styleNav() }
             setOnClickListener { startActivity(Intent(this@MainActivity, SearchActivity::class.java)) }
         }.inNav(width = dp(44), height = -1)
-        // A page opens as soon as the remote rests on its name. OK on Shows or Movies goes to its genres.
-        Page.entries.filter { it != Page.LIVE }.forEach { p ->
+        // A page opens as soon as the remote rests on its name. OK on Shows or Movies goes to its genres. Live shows only
+        // once the profile's add-ons have a live catalog ([showLiveTab]).
+        Page.entries.forEach { p ->
             navItems[p] = text(p.label, BODY).apply {
                 gravity = Gravity.CENTER
                 compoundDrawablePadding = dp(2)
@@ -604,6 +652,7 @@ class MainActivity : Screen() {
                         else -> firstRow()?.focusFirst()
                     }
                 }
+                if (p == Page.LIVE) visibility = View.GONE
             }.inNav()
         }
         nav.background = glassOver(nav, NAV_R + 4)
@@ -618,6 +667,12 @@ class MainActivity : Screen() {
         }, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
         styleNav()
         return header
+    }
+
+    /** Live in the top bar only for a profile whose add-ons list channels, sport or events. */
+    private fun showLiveTab(addons: List<Addon>) {
+        val live = addons.any { a -> a.catalogs.any { shelf(it)?.page == Page.LIVE } }
+        navItems[Page.LIVE]?.visibility = if (live || page == Page.LIVE) View.VISIBLE else View.GONE
     }
 
     private var pending = Page.HOME
@@ -661,8 +716,8 @@ class MainActivity : Screen() {
      */
     private fun showArt(item: Item, ready: (() -> Unit)? = null) {
         main.removeCallbacks(artTask)
-        // The poster only once it's certain there's no art: a poster cropped to the screen is blurry and half a face.
-        val url = item.art ?: item.poster?.takeIf { item.settled } ?: return
+        if (item.live && item.art == null && item.poster == null) return run { if (item.settled) clearArt(); ready?.invoke() }
+        val (url, look) = backdropOf(item) ?: return
         if (url == art.tag) return run { ready?.invoke() }
         artTask = Runnable {
             art.animate().cancel()
@@ -676,7 +731,7 @@ class MainActivity : Screen() {
             art.scaleX = 1f
             art.scaleY = 1f
             art.alpha = 0f
-            Images.load(url, art, artW, urgent = true, look = shaded, failed = ready) {
+            Images.load(url, art, artW, urgent = true, look = look, failed = ready) {
                 // Once the new art covers it, the old one lets go: otherwise the GPU paints a hidden full screen every frame.
                 art.animate().alpha(1f).setDuration(if (artBack.drawable == null) 800 else 600).withEndAction {
                     artBack.setImageDrawable(null)
@@ -686,7 +741,22 @@ class MainActivity : Screen() {
                 ready?.invoke()
             }
         }
-        if (Images.cached(url, artW, shaded) || ready != null) artTask.run() else main.postDelayed(artTask, 120)
+        if (Images.cached(url, artW, look) || ready != null) artTask.run() else main.postDelayed(artTask, 120)
+    }
+
+    /**
+     * What fills the screen behind [item]: its art; once it's certain there's none, a live channel's logo as a colour
+     * wash, or else the poster (a poster cropped to the screen is blurry and half a face, so only as a last resort).
+     */
+    private fun backdropOf(item: Item): Pair<String, Images.Look>? = item.art?.let { it to shaded }
+        ?: item.poster?.takeIf { item.settled }?.let { it to if (item.live) washed else shaded }
+
+    /** A live channel with no pictures at all: the plain dark base, rather than the last title's art staying on. */
+    private fun clearArt() {
+        art.animate().cancel()
+        art.tag = null
+        artBack.setImageDrawable(null)
+        art.animate().alpha(0f).setDuration(300).withEndAction { if (art.tag == null) art.setImageDrawable(null) }.start()
     }
 
     /** Gets [item]'s full-screen art ready ahead (fetching its details first if need be), so moving to it is instant. */
@@ -695,7 +765,7 @@ class MainActivity : Screen() {
         item.warming = true
         item.logo?.let { Images.prefetch(it, dp(LOGO_W)) }
         if (item.art != null) return Images.prefetch(item.art, artW, look = shaded)
-        item.onFill += { Images.prefetch(item.art, artW, look = shaded); item.logo?.let { Images.prefetch(it, dp(LOGO_W)) } }
+        item.onFill += { backdropOf(item)?.let { (url, look) -> Images.prefetch(url, artW, look = look) }; item.logo?.let { Images.prefetch(it, dp(LOGO_W)) } }
         fill(item)
     }
 
@@ -707,15 +777,12 @@ class MainActivity : Screen() {
         topShade.animate().alpha(if (headerOn) 1f else 0f).setDuration(250).start()
         // Lighter in the cinema (only its few words sit low on the left), full while browsing under the cards.
         browseInfo.animate().alpha(if (cinemaOn || heroItem == null) 0f else 1f).setDuration(250).start()
-        cardCaption.alpha = if (cinemaOn || page == Page.LIBRARY || page == Page.LIVE) 0f else 1f
-        nextRowHint.alpha = if (cinemaOn || page == Page.LIBRARY || page == Page.LIVE) 0f else 1f
+        cardCaption.alpha = if (cinemaOn || page == Page.LIBRARY) 0f else 1f
+        nextRowHint.alpha = if (cinemaOn || page == Page.LIBRARY) 0f else 1f
         genreStrip.alpha = if (cinemaOn) 0f else 1f
         listCount.alpha = if (cinemaOn) 0f else 1f
         listHint.alpha = if (cinemaOn) 0f else 1f
         if (cinemaOn) {
-            main.removeCallbacks(hideTrack)
-            indicatedRow = null
-            track.animate().alpha(0f).setDuration(250).start()
             moreHint.animate().alpha(0f).setDuration(250).start()
         }
         cinemaInfo.animate().alpha(if (cinemaOn && cinemaReady) 1f else 0f).setDuration(250).start()
@@ -913,8 +980,8 @@ class MainActivity : Screen() {
             }
         }
         heroActions.visibility = if (page != Page.HOME && page != Page.LIBRARY && item.resume) View.VISIBLE else View.GONE
-        if (page == Page.HOME || page.isCatalog) showCaption(item)
-        if (mode == Mode.BROWSE) browseInfo.animate().alpha(if (homeDimmed && (page == Page.HOME || page.isCatalog || page == Page.LIBRARY)) 0.3f else 1f).setDuration(150).start()
+        if (page.isBrowse) showCaption(item)
+        if (mode == Mode.BROWSE) browseInfo.animate().alpha(if (homeDimmed && (page.isBrowse || page == Page.LIBRARY)) 0.3f else 1f).setDuration(150).start()
         showArt(item)
     }
 
@@ -1008,9 +1075,6 @@ class MainActivity : Screen() {
         else if (!p.isCatalog) { genreStrip.removeAllViews(); genreChips.clear() }
         cardCaption.visibility = View.GONE
         nextRowHint.visibility = View.GONE
-        main.removeCallbacks(hideTrack)
-        indicatedRow = null
-        track.animate().alpha(0f).setDuration(200).start()
         moreHint.alpha = 0f
         if (p == Page.HOME) cinema = emptyList() // other pages keep Home's, so the screensaver works there too
         focusedSomething = false
@@ -1089,6 +1153,7 @@ class MainActivity : Screen() {
         var built = false
         var builtFrom: List<String>? = null // the add-ons the rows came from, to tell when Stremio's fresh list differs
         fun build(addons: List<Addon>) {
+            if (g == generation) showLiveTab(addons)
             if (built || g != generation) return
             built = true
             builtFrom = addons.map { it.id }
@@ -1184,7 +1249,7 @@ class MainActivity : Screen() {
                         val old = rows.firstOrNull { it.view.parent === slot }
                         if (old?.view?.hasFocus() == true) { old.pendingUpdate = ::add; return }
                         old?.let { it.cards.forEach { card -> card.unload() }; rows.remove(it); slot.removeAllViews() }
-                        val made = row(title, items.take(maxOf(START, old?.items?.size ?: START)), more)
+                        val made = row(title, items.take(maxOf(START, old?.items?.size ?: START)), more, wide = (p == Page.LIVE))
                         slot.addView(made.view)
                         if (i == 0) android.util.Log.d("Alder", "page ${p.label}: first row in ${android.os.SystemClock.uptimeMillis() - opened} ms")
                         updateNextRow()
@@ -1256,6 +1321,7 @@ class MainActivity : Screen() {
         // Every page asks Stremio for the add-on list once as it opens (and again when Alder comes back to the front), and
         // redraws only when the list differs from the one its rows came from: add-ons added or removed elsewhere.
         fun checkAddons(drawn: (List<Addon>) -> Unit) = background({ Stremio.addons(key, refresh = true) }) { r -> r.fold({ fresh ->
+            if (g == generation) showLiveTab(fresh)
             if (built && g == generation && builtFrom != fresh.map { it.id }) showPage(p, quick = false) else drawn(fresh)
         }) { if (!built && g == generation) failedToLoad(it) } }
         checkAddons(::build)
@@ -1347,12 +1413,16 @@ class MainActivity : Screen() {
     /**
      * Where a catalog's row goes and what it's called, like Netflix: Home is what you're watching and what it led to
      * ("Because you watched…"); everything else sits on Movies or Shows by type, without the addon's name or a type
-     * suffix. Personal picks come first (rank 0–1), then what's popular (2), then themed lists (3). Sport has no page
-     * yet, so its catalogs are left out.
+     * suffix. Personal picks come first (rank 0–1), then what's popular (2), then themed lists (3). TV channels, sport
+     * and events go to Live, one row per catalog under its own name; other types (anime, video channels) are left out.
      */
     private fun shelf(c: Addon.Catalog): Shelf? {
-        // Anything that isn't a film or a series (sport, TV channels, events) goes to Live, under its own name.
-        val typePage = when (c.type) { "movie" -> Page.MOVIES; "series" -> Page.SHOWS; else -> return Shelf(Page.LIVE, tidy(c.name), 3) }
+        val typePage = when {
+            c.type == "movie" -> Page.MOVIES
+            c.type == "series" -> Page.SHOWS
+            isLiveType(c.type) -> return Shelf(Page.LIVE, tidy(c.name), 3)
+            else -> return null
+        }
         val india = mapOf(
             "trendingmovies" to "Trending in India", "trendingtv" to "Trending in India",
             "popmov" to "Popular in India",
@@ -1503,7 +1573,7 @@ class MainActivity : Screen() {
     private val nextRowCheck = Runnable { updateNextRow() }
 
     private fun updateNextRow() {
-        if (page != Page.HOME && !page.isCatalog) return
+        if (!page.isBrowse) return
         val visible = rows.filter { it.view.isAttachedToWindow }.sortedBy { offsetIn(it.view) }
         // No row in use (the remote is on the chips or the top bar): the row sitting in the band counts.
         val active = visible.indexOfFirst { it.active }.takeIf { it >= 0 }
@@ -1633,7 +1703,7 @@ class MainActivity : Screen() {
             if (active) {
                 if (previous != index) { cards[previous].dim(true); cards[index].dim(false) }
             } else light(true)
-            if (page == Page.HOME || page.isCatalog) updateNextRow()
+            if (page.isBrowse) updateNextRow()
             if (page.isCatalog) markChip(title)
             if (grid) listCount.text = "Row ${rows.indexOf(this) + 1} of $listRows  ·  $listTotal titles"
             fill(items[index])
@@ -1656,7 +1726,7 @@ class MainActivity : Screen() {
             // The caption sits under the focused card, also where the row stops sliding near its end.
             captionX = (cards[index].left - targetScroll - dp(PAD)).coerceAtLeast(0)
             val beyond = cards.any { it.right - targetScroll > right }
-            moreHint.animate().alpha(if (beyond && mode == Mode.BROWSE && page != Page.HOME && !page.isCatalog) 0.9f else 0f).setDuration(200).start()
+            moreHint.animate().alpha(if (beyond && mode == Mode.BROWSE && !page.isBrowse) 0.9f else 0f).setDuration(200).start()
             moreHint.translationY = if (wide) dp(CARD_H - WIDE_H + WIDE_H / 2 - CARD_H / 2).toFloat() else 0f
             if (!grid && wideRow != wide) {
                 wideRow = wide
@@ -1707,8 +1777,20 @@ class MainActivity : Screen() {
             // The name in words: always on a wide card, on a poster only when it has no picture. Made only then: a
             // text view per card was a good part of the cost of making a row.
             private val nameMade = lazy {
-                text(item.name, if (wide) BODY else SMALL, bold = true).apply { maxLines = if (wide) 1 else 2; ellipsize = TextUtils.TruncateAt.END }
-                    .also { face.addView(it, LayoutParams(-1, -2, Gravity.BOTTOM or Gravity.START).apply { setMargins(dp(inset), 0, dp(inset), dp(if (item.progress > 0) 22 else 12)) }) }
+                text(item.name, if (wide) BODY else SMALL, bold = true).apply {
+                    maxLines = if (wide) 1 else 2
+                    ellipsize = TextUtils.TruncateAt.END
+                    if (item.live) gravity = Gravity.CENTER
+                }.also {
+                    face.addView(it, LayoutParams(
+                        if (item.live) -2 else -1,
+                        -2,
+                        if (item.live) Gravity.CENTER else Gravity.BOTTOM or Gravity.START
+                    ).apply {
+                        if (item.live) setMargins(dp(8), dp(8), dp(8), dp(8))
+                        else setMargins(dp(inset), 0, dp(inset), dp(if (item.progress > 0) 22 else 12))
+                    })
+                }
             }
             private val name by nameMade
             private val inset = if (wide) 14 else 12
@@ -1731,10 +1813,10 @@ class MainActivity : Screen() {
                 setBackgroundColor(BASE)
                 face.addView(image, LayoutParams(-1, -1))
                 // A dark foot under the words or the progress bar; a plain poster needs none.
-                if (wide || item.progress > 0) face.addView(View(context).apply {
+                if ((wide && !item.live) || item.progress > 0) face.addView(View(context).apply {
                     background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xE6000000.toInt(), 0x66000000, 0x00000000))
                 }, LayoutParams(-1, dp(cardH * (if (wide) 6 else 4) / 10), Gravity.BOTTOM))
-                if (wide) name.visibility = View.VISIBLE
+                if (wide && !item.live) name.visibility = View.VISIBLE
                 // Time left as a quiet label in the corner, where the eye checks before choosing what to resume.
                 val timeLeft = item.left?.split(DOT)?.lastOrNull { it.endsWith("left") }
                 if (wide && timeLeft != null) face.addView(text(timeLeft, SMALL, bold = true).apply {
@@ -1762,9 +1844,11 @@ class MainActivity : Screen() {
                         showHero(item)
                     } else main.post { if (!view.hasFocus()) pendingUpdate?.let { pendingUpdate = null; it() } }
                 }
-                setOnClickListener { openDetails(item) }
+                // A channel has no title page to show: OK plays it, and holding OK lists its sources.
+                setOnClickListener { if (item.live) play(item) else openDetails(item) }
                 if (grid) setOnLongClickListener { listMenu(item); true }
                 else if (item.resume) setOnLongClickListener { continueMenu(item); true }
+                else if (item.live) setOnLongClickListener { play(item, pick = true); true }
             }
 
             private var showing: Boolean? = null
@@ -1782,20 +1866,47 @@ class MainActivity : Screen() {
             fun load() {
                 wanted = true
                 // A wide card waits for the title's art (it comes with its details) and takes the poster only if there's none.
-                val pick = if (wide) item.art ?: item.poster?.takeIf { item.settled } else item.poster ?: item.art
-                if (pick == null || (wide && item.art == null)) fill(item)
-                val url = pick ?: run { if (item.settled) { name.visibility = View.VISIBLE; face.alpha = 1f }; return }
+                val pick = if (item.live) item.poster ?: item.art else if (wide) item.art ?: item.poster?.takeIf { item.settled } else item.poster ?: item.art
+                if (pick == null || (!item.live && wide && item.art == null)) fill(item)
+                val url = pick ?: run {
+                    if (item.settled || item.live) {
+                        if (item.live) face.background = glass(RADIUS)
+                        name.visibility = View.VISIBLE
+                        face.alpha = 1f
+                    }
+                    return
+                }
                 if (url == shown) return
                 shown = url
                 face.animate().cancel()
                 face.alpha = 0f
                 var now = true // from memory: no fade, it's simply there
-                Images.load(url, image, (dp(cardW) * CARD_GROW).toInt(), failed = { name.visibility = View.VISIBLE; face.alpha = 1f }) {
-                    if (nameMade.isInitialized()) name.visibility = if (wide) View.VISIBLE else View.INVISIBLE
+                Images.load(url, image, (dp(cardW) * CARD_GROW).toInt(), failed = {
+                    if (item.live) face.background = glass(RADIUS)
+                    name.visibility = View.VISIBLE
+                    face.alpha = 1f
+                }) {
+                    if (item.live) fitLogo()
+                    if (nameMade.isInitialized()) name.visibility = if (wide && !item.live) View.VISIBLE else View.INVISIBLE
                     if (now) face.alpha = 1f else face.animate().alpha(1f).setDuration(180).start()
                     if (isFocused) lift(true)
                 }
                 now = false
+            }
+
+            /**
+             * A channel's picture is often its logo: on a transparent background, or a shape far from the card's. That
+             * sits whole inside the card on glass instead of being cropped; a picture shaped like the card fills it.
+             */
+            private fun fitLogo() {
+                val bitmap = (image.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap ?: return
+                val shape = bitmap.width / bitmap.height.toFloat()
+                val target = cardW / cardH.toFloat()
+                val logo = bitmap.hasAlpha() || kotlin.math.abs(shape - target) > 0.25f
+                image.scaleType = if (logo) ImageView.ScaleType.FIT_CENTER else ImageView.ScaleType.CENTER_CROP
+                val inset = if (logo) dp(if (wide) 8 else LOGO_INSET) else 0
+                image.setPadding(inset, inset, inset, inset)
+                face.background = if (logo) glass(RADIUS) else null
             }
 
             /** Far off screen: let the pictures go. */
@@ -1804,6 +1915,8 @@ class MainActivity : Screen() {
                 shown = null
                 image.tag = null
                 image.setImageDrawable(null)
+                image.setPadding(0, 0, 0, 0)
+                face.background = null
                 face.alpha = 0f
             }
         }
@@ -1854,8 +1967,11 @@ class MainActivity : Screen() {
         m.genres.take(2).joinToString(", ").ifEmpty { null }, m.year, m.rating?.let { "IMDb $it" },
     )
 
+    // A channel's square or wide picture is its logo, and stands in for the title's logo above the cards.
     private fun metaItem(m: Meta) = Item(
-        m.id, m.type, m.name, m.poster, m.background, m.logo ?: Images.logoFor(m.id), m.description ?: "", facts(m),
+        m.id, m.type, m.name, m.poster, m.background,
+        m.logo ?: Images.logoFor(m.id) ?: m.poster?.takeIf { isLiveType(m.type) && m.posterShape in listOf("square", "landscape") },
+        m.description ?: "", facts(m),
         null, 0f, resume = false, left = null,
     )
 
@@ -1902,22 +2018,10 @@ class MainActivity : Screen() {
 
     // ---------- vertical movement ----------
 
-    /** Shows the focused row in the row band and briefly reveals its position when changing rows. */
+    /** Shows the focused row in the row band. */
     private fun snapTo(focused: View) {
         val rowView = rows.firstOrNull { isInside(focused, it.view) }?.view ?: return
         scroller.smoothScrollTo(0, offsetIn(rowView).coerceAtLeast(0))
-        val order = rows.filter { it.view.isAttachedToWindow }.map { it.view }.sortedBy { offsetIn(it) }
-        val n = order.size
-        val at = order.indexOf(rowView).coerceAtLeast(0)
-        val thumbH = maxOf(dp(12), dp(CARD_H) / maxOf(n, 1))
-        thumb.layoutParams = thumb.layoutParams.apply { height = thumbH }
-        thumb.animate().translationY(if (n > 1) (dp(CARD_H) - thumbH) * at / (n - 1f) else 0f).setDuration(200).start()
-        if (rowView !== indicatedRow) {
-            indicatedRow = rowView
-            main.removeCallbacks(hideTrack)
-            track.animate().alpha(if (n > 1 && mode == Mode.BROWSE && page == Page.LIVE) 1f else 0f).setDuration(200).start()
-            main.postDelayed(hideTrack, 1200)
-        }
     }
 
     // ---------- memory: pictures only near the screen ----------
@@ -2012,6 +2116,7 @@ class MainActivity : Screen() {
         const val LOGO_W = 360 // the cinema's title logo
         const val LOGO_H = 100
         const val RADIUS = 6
+        const val LOGO_INSET = 14 // dp around a channel logo inside its card
         const val ROW_TOP_ROOM = HEADING_GAP + 9 // dp between the row title and its cards, plus the focused card's growth (5% of 180 dp a side)
         const val ROW_BOTTOM_ROOM = 38 // room for the focused caption below the poster
         const val SAFE_BOTTOM = 27

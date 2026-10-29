@@ -535,7 +535,8 @@ class PlayerActivity : Screen() {
 
     private fun record() {
         // Nothing is saved until a picture shows: a source that never starts would otherwise reset the resume point.
-        if (!started || player.isCurrentMediaItemLive) return // live TV has no progress to keep
+        // Live TV has no progress to keep, nor does a channel or event whose stream doesn't say it's live.
+        if (!started || player.isCurrentMediaItemLive || isLiveType(type)) return
         if (type == "series" && !plausibleEpisode(player.duration)) return
         val item = item ?: return
         val position = player.currentPosition
@@ -698,7 +699,7 @@ class PlayerActivity : Screen() {
     }
 
     private fun push() {
-        if (!watched || player.isCurrentMediaItemLive) return
+        if (!watched || player.isCurrentMediaItemLive || isLiveType(type)) return
         val key = authKey ?: return
         val snapshot = item?.let { JSONObject(it.toString()) } ?: return
         background({ Stremio.saveLibrary(key, listOf(snapshot)) }) {}
@@ -1292,7 +1293,7 @@ class PlayerActivity : Screen() {
         main.removeCallbacks(skipTask)
         main.removeCallbacks(loadingTask)
         player.pause()
-        if (!watched || player.isCurrentMediaItemLive || type == "series" && !plausibleEpisode(player.duration)) return
+        if (!watched || player.isCurrentMediaItemLive || isLiveType(type) || type == "series" && !plausibleEpisode(player.duration)) return
         record()
         // The player's own episode list first: Home's Resume passes no next episode when the title's details weren't in
         // yet, and a finished episode with no next one drops the title out of Continue Watching.

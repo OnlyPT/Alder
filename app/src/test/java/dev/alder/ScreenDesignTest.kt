@@ -216,4 +216,18 @@ class ScreenDesignTest {
         assertEquals("Streams · Catalogs", addonRole("Example", "org.example", setOf("stream", "catalog")))
         assertEquals("Titles and details", addonRole("Cinemeta", "com.cinemeta", setOf("catalog", "meta")))
     }
+
+    @Test fun liveTypesAreChannelsSportAndEventsOnly() {
+        listOf("tv", "TV", "live", "sport", "Sports", "events").forEach { assertEquals(true, isLiveType(it)) }
+        listOf("movie", "series", "anime", "channel", "other").forEach { assertEquals(false, isLiveType(it)) }
+    }
+
+    @Test fun logoTintTakesTheColourfulPixelsAndSkipsPlainLogos() {
+        val red = 0xFFE00000.toInt()
+        val clear = 0x00000000
+        val white = 0xFFFFFFFF.toInt()
+        assertEquals(0xFF780000.toInt(), logoTint(intArrayOf(red, red, clear, white)))
+        assertEquals(null, logoTint(intArrayOf(white, white, 0xFF000000.toInt(), clear)))
+        assertEquals(null, logoTint(intArrayOf(clear, clear)))
+    }
 }
