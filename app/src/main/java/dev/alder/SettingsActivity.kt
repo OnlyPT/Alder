@@ -154,7 +154,7 @@ class SettingsActivity : Screen() {
         Choice("maxHeight", "Highest quality", "Releases above this are skipped when picking a source.",
             listOf(0 to "No limit", 2160 to "4K", 1080 to "1080p", 720 to "720p")),
         Choice("maxSizeGb", "Largest file", "For slow connections: big files take longer to start.",
-            listOf(0 to "No limit", 40 to "40 GB", 20 to "20 GB", 10 to "10 GB", 5 to "5 GB")),
+            listOf(0 to "No limit", 40 to "40 GB", 30 to "30 GB", 20 to "20 GB", 10 to "10 GB", 5 to "5 GB")),
         Choice("release", "Release type", "Which kind of file is tried first for this profile. REMUX is the full Blu-ray.",
             listOf("" to "No preference", "remux" to "Full Blu-ray (REMUX)", "encode" to "Smaller encodes", "web" to "Web releases"), true),
     )
