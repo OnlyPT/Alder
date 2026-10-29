@@ -171,9 +171,7 @@ class MainActivity : Screen() {
     // Not glass: a light darkening of the art's top edge while the top bar shows. The left and bottom shades are painted
     // into the art itself ([shaded]).
     private lateinit var topShade: View
-    // Brief row-position cue in the left margin, beside the cards.
-    private lateinit var track: FrameLayout
-    private lateinit var thumb: View
+
     // A chevron in the right margin while the row the remote is in has more cards past the screen's edge.
     private lateinit var moreHint: ImageView
     private lateinit var nextRowHint: TextView
@@ -181,8 +179,7 @@ class MainActivity : Screen() {
     private var captionX = 0 // px from the left margin to the focused card, where its caption goes
     private var browseRowTop = 0
     private var browseRowH = 0
-    private var indicatedRow: View? = null
-    private val hideTrack = Runnable { track.animate().alpha(0f).setDuration(250).start() }
+
     private var artTask = Runnable {}
     private val artW by lazy { resources.displayMetrics.widthPixels }
 
@@ -356,10 +353,6 @@ class MainActivity : Screen() {
             addView(art, FrameLayout.LayoutParams(-1, -1))
             addView(topShade, FrameLayout.LayoutParams(-1, dp(HEADER_H + 180)))
             addView(scroller, FrameLayout.LayoutParams(-1, rowH).apply { topMargin = rowTop })
-            track = FrameLayout(context).apply { alpha = 0f }
-            thumb = View(context).apply { background = rounded(0xB3FFFFFF.toInt(), 2) }
-            track.addView(thumb, FrameLayout.LayoutParams(-1, dp(12)))
-            addView(track, FrameLayout.LayoutParams(dp(2), dp(CARD_H)).apply { leftMargin = dp(PAD) / 2; topMargin = rowTop + headingH + dp(ROW_TOP_ROOM) })
             moreHint = ImageView(context).apply { setImageResource(R.drawable.ic_back); scaleX = -1f; alpha = 0f }
             addView(moreHint, FrameLayout.LayoutParams(dp(32), dp(32), Gravity.END).apply {
                 rightMargin = (dp(PAD) - dp(32)) / 2; topMargin = rowTop + headingH + dp(ROW_TOP_ROOM + CARD_H / 2 - 16)
@@ -790,9 +783,6 @@ class MainActivity : Screen() {
         listCount.alpha = if (cinemaOn) 0f else 1f
         listHint.alpha = if (cinemaOn) 0f else 1f
         if (cinemaOn) {
-            main.removeCallbacks(hideTrack)
-            indicatedRow = null
-            track.animate().alpha(0f).setDuration(250).start()
             moreHint.animate().alpha(0f).setDuration(250).start()
         }
         cinemaInfo.animate().alpha(if (cinemaOn && cinemaReady) 1f else 0f).setDuration(250).start()
@@ -1085,9 +1075,6 @@ class MainActivity : Screen() {
         else if (!p.isCatalog) { genreStrip.removeAllViews(); genreChips.clear() }
         cardCaption.visibility = View.GONE
         nextRowHint.visibility = View.GONE
-        main.removeCallbacks(hideTrack)
-        indicatedRow = null
-        track.animate().alpha(0f).setDuration(200).start()
         moreHint.alpha = 0f
         if (p == Page.HOME) cinema = emptyList() // other pages keep Home's, so the screensaver works there too
         focusedSomething = false
@@ -1262,7 +1249,7 @@ class MainActivity : Screen() {
                         val old = rows.firstOrNull { it.view.parent === slot }
                         if (old?.view?.hasFocus() == true) { old.pendingUpdate = ::add; return }
                         old?.let { it.cards.forEach { card -> card.unload() }; rows.remove(it); slot.removeAllViews() }
-                        val made = row(title, items.take(maxOf(START, old?.items?.size ?: START)), more)
+                        val made = row(title, items.take(maxOf(START, old?.items?.size ?: START)), more, wide = (p == Page.LIVE))
                         slot.addView(made.view)
                         if (i == 0) android.util.Log.d("Alder", "page ${p.label}: first row in ${android.os.SystemClock.uptimeMillis() - opened} ms")
                         updateNextRow()
@@ -1790,8 +1777,20 @@ class MainActivity : Screen() {
             // The name in words: always on a wide card, on a poster only when it has no picture. Made only then: a
             // text view per card was a good part of the cost of making a row.
             private val nameMade = lazy {
-                text(item.name, if (wide) BODY else SMALL, bold = true).apply { maxLines = if (wide) 1 else 2; ellipsize = TextUtils.TruncateAt.END }
-                    .also { face.addView(it, LayoutParams(-1, -2, Gravity.BOTTOM or Gravity.START).apply { setMargins(dp(inset), 0, dp(inset), dp(if (item.progress > 0) 22 else 12)) }) }
+                text(item.name, if (wide) BODY else SMALL, bold = true).apply {
+                    maxLines = if (wide) 1 else 2
+                    ellipsize = TextUtils.TruncateAt.END
+                    if (item.live) gravity = Gravity.CENTER
+                }.also {
+                    face.addView(it, LayoutParams(
+                        if (item.live) -2 else -1,
+                        -2,
+                        if (item.live) Gravity.CENTER else Gravity.BOTTOM or Gravity.START
+                    ).apply {
+                        if (item.live) setMargins(dp(8), dp(8), dp(8), dp(8))
+                        else setMargins(dp(inset), 0, dp(inset), dp(if (item.progress > 0) 22 else 12))
+                    })
+                }
             }
             private val name by nameMade
             private val inset = if (wide) 14 else 12
@@ -1814,10 +1813,10 @@ class MainActivity : Screen() {
                 setBackgroundColor(BASE)
                 face.addView(image, LayoutParams(-1, -1))
                 // A dark foot under the words or the progress bar; a plain poster needs none.
-                if (wide || item.progress > 0) face.addView(View(context).apply {
+                if ((wide && !item.live) || item.progress > 0) face.addView(View(context).apply {
                     background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xE6000000.toInt(), 0x66000000, 0x00000000))
                 }, LayoutParams(-1, dp(cardH * (if (wide) 6 else 4) / 10), Gravity.BOTTOM))
-                if (wide) name.visibility = View.VISIBLE
+                if (wide && !item.live) name.visibility = View.VISIBLE
                 // Time left as a quiet label in the corner, where the eye checks before choosing what to resume.
                 val timeLeft = item.left?.split(DOT)?.lastOrNull { it.endsWith("left") }
                 if (wide && timeLeft != null) face.addView(text(timeLeft, SMALL, bold = true).apply {
@@ -1867,17 +1866,28 @@ class MainActivity : Screen() {
             fun load() {
                 wanted = true
                 // A wide card waits for the title's art (it comes with its details) and takes the poster only if there's none.
-                val pick = if (wide) item.art ?: item.poster?.takeIf { item.settled } else item.poster ?: item.art
-                if (pick == null || (wide && item.art == null)) fill(item)
-                val url = pick ?: run { if (item.settled) { name.visibility = View.VISIBLE; face.alpha = 1f }; return }
+                val pick = if (item.live) item.poster ?: item.art else if (wide) item.art ?: item.poster?.takeIf { item.settled } else item.poster ?: item.art
+                if (pick == null || (!item.live && wide && item.art == null)) fill(item)
+                val url = pick ?: run {
+                    if (item.settled || item.live) {
+                        if (item.live) face.background = glass(RADIUS)
+                        name.visibility = View.VISIBLE
+                        face.alpha = 1f
+                    }
+                    return
+                }
                 if (url == shown) return
                 shown = url
                 face.animate().cancel()
                 face.alpha = 0f
                 var now = true // from memory: no fade, it's simply there
-                Images.load(url, image, (dp(cardW) * CARD_GROW).toInt(), failed = { name.visibility = View.VISIBLE; face.alpha = 1f }) {
+                Images.load(url, image, (dp(cardW) * CARD_GROW).toInt(), failed = {
+                    if (item.live) face.background = glass(RADIUS)
+                    name.visibility = View.VISIBLE
+                    face.alpha = 1f
+                }) {
                     if (item.live) fitLogo()
-                    if (nameMade.isInitialized()) name.visibility = if (wide) View.VISIBLE else View.INVISIBLE
+                    if (nameMade.isInitialized()) name.visibility = if (wide && !item.live) View.VISIBLE else View.INVISIBLE
                     if (now) face.alpha = 1f else face.animate().alpha(1f).setDuration(180).start()
                     if (isFocused) lift(true)
                 }
@@ -1891,9 +1901,10 @@ class MainActivity : Screen() {
             private fun fitLogo() {
                 val bitmap = (image.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap ?: return
                 val shape = bitmap.width / bitmap.height.toFloat()
-                val logo = bitmap.hasAlpha() || kotlin.math.abs(shape - cardW / cardH.toFloat()) > 0.2f
+                val target = cardW / cardH.toFloat()
+                val logo = bitmap.hasAlpha() || kotlin.math.abs(shape - target) > 0.25f
                 image.scaleType = if (logo) ImageView.ScaleType.FIT_CENTER else ImageView.ScaleType.CENTER_CROP
-                val inset = if (logo) dp(LOGO_INSET) else 0
+                val inset = if (logo) dp(if (wide) 8 else LOGO_INSET) else 0
                 image.setPadding(inset, inset, inset, inset)
                 face.background = if (logo) glass(RADIUS) else null
             }
@@ -1904,6 +1915,8 @@ class MainActivity : Screen() {
                 shown = null
                 image.tag = null
                 image.setImageDrawable(null)
+                image.setPadding(0, 0, 0, 0)
+                face.background = null
                 face.alpha = 0f
             }
         }
@@ -2005,22 +2018,10 @@ class MainActivity : Screen() {
 
     // ---------- vertical movement ----------
 
-    /** Shows the focused row in the row band and briefly reveals its position when changing rows. */
+    /** Shows the focused row in the row band. */
     private fun snapTo(focused: View) {
         val rowView = rows.firstOrNull { isInside(focused, it.view) }?.view ?: return
         scroller.smoothScrollTo(0, offsetIn(rowView).coerceAtLeast(0))
-        val order = rows.filter { it.view.isAttachedToWindow }.map { it.view }.sortedBy { offsetIn(it) }
-        val n = order.size
-        val at = order.indexOf(rowView).coerceAtLeast(0)
-        val thumbH = maxOf(dp(12), dp(CARD_H) / maxOf(n, 1))
-        thumb.layoutParams = thumb.layoutParams.apply { height = thumbH }
-        thumb.animate().translationY(if (n > 1) (dp(CARD_H) - thumbH) * at / (n - 1f) else 0f).setDuration(200).start()
-        if (rowView !== indicatedRow) {
-            indicatedRow = rowView
-            main.removeCallbacks(hideTrack)
-            track.animate().alpha(if (n > 1 && mode == Mode.BROWSE && page == Page.LIVE) 1f else 0f).setDuration(200).start()
-            main.postDelayed(hideTrack, 1200)
-        }
     }
 
     // ---------- memory: pictures only near the screen ----------
