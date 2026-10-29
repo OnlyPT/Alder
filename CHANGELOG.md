@@ -19,6 +19,7 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 ### New
 - **Live TV and sport.** If your add-ons have TV channels, sport or events, select **Live** at the top. Select a channel to play it. To choose a source, hold OK.
 - **30 GB file limit.** Select **30 GB** in **Settings → Largest file**.
+- **Blur episode thumbnails.** Turn on **Settings → Profile → Blur episode thumbnails**. Alder blurs pictures of unwatched episodes to prevent spoilers.
 
 ### Easier to use
 - **Update notification dot.** A dot on your profile avatar shows when a new version of Alder is ready.
