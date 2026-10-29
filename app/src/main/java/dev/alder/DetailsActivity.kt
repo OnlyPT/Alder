@@ -82,6 +82,10 @@ class DetailsActivity : Screen() {
             }, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
                 topMargin = dp(36); rightMargin = dp(PAD)
             })
+            val (loading, loadingText) = loadingOverlay("Finding sources…")
+            loadingView = loading
+            loadingStatus = loadingText
+            addView(loadingView, FrameLayout.LayoutParams(-1, -1))
         }
         setWindowed(root, heroArt)
 
@@ -593,12 +597,23 @@ class DetailsActivity : Screen() {
 
     // ---------- shared ----------
 
+    private var resolvingStreams: Cancellable? = null
+    private lateinit var loadingView: FrameLayout
+    private lateinit var loadingStatus: TextView
+
+    private fun cancelStreamResolution() {
+        resolvingStreams?.cancel()
+        resolvingStreams = null
+        if (::loadingView.isInitialized) loadingView.visibility = View.GONE
+    }
+
     private fun openSources(videoId: String, startOver: Boolean, next: String? = null, label: String? = null, pick: Boolean = false) {
+        if (resolvingStreams != null) return
         val m = meta
         val nextId = next ?: m?.videos?.let { vs -> vs.getOrNull(vs.indexOfFirst { it.id == videoId } + 1)?.id }
         val video = m?.videos?.firstOrNull { it.id == videoId }
         val short = label ?: video?.let { "S${it.season} E${it.episode}" }
-        startActivity(Intent(this, StreamsActivity::class.java)
+        val intent = Intent(this, StreamsActivity::class.java)
             .putExtra("type", type).putExtra("id", metaId).putExtra("name", m?.name ?: name).putExtra("poster", m?.poster ?: poster)
             .putExtra("videoId", videoId).putExtra("nextVideoId", nextId).putExtra("startOver", startOver).putExtra("pick", pick)
             .putExtra("background", m?.background)
@@ -606,7 +621,38 @@ class DetailsActivity : Screen() {
             // For the sources page: the title's logo, the episode's still and "S1 E3 · OutKast".
             .putExtra("logo", m?.logo).putExtra("still", video?.thumbnail).putExtra("runtime", m?.runtime)
             .putExtra("blurStill", Settings.blurThumbnails(this) && video != null && video.id !in Library.watched(item, m?.videos.orEmpty()))
-            .putExtra("episode", video?.let { v -> listOfNotNull("S${v.season} E${v.episode}", v.title.takeIf { it.isNotBlank() }).joinToString("  ·  ") }))
+            .putExtra("episode", video?.let { v -> listOfNotNull("S${v.season} E${v.episode}", v.title.takeIf { it.isNotBlank() }).joinToString("  ·  ") })
+
+        if (pick || Settings.alwaysList(this)) {
+            startActivity(intent)
+            return
+        }
+
+        loadingStatus.text = "Finding sources…"
+        loadingView.visibility = View.VISIBLE
+        loadingView.bringToFront()
+
+        resolvingStreams = StreamsResolver.resolve(
+            context = this,
+            type = type,
+            videoId = videoId,
+            metaId = metaId,
+            authKey = authKey,
+            onReady = { best ->
+                cancelStreamResolution()
+                startActivity(Intent(this, PlayerActivity::class.java).putExtras(intent)
+                    .putExtra("sources", org.json.JSONArray(best.map { it.toJson() }).toString()))
+            },
+            onFallback = {
+                cancelStreamResolution()
+                startActivity(intent)
+            }
+        )
+    }
+
+    override fun onPause() {
+        cancelStreamResolution()
+        super.onPause()
     }
 
     // Back from the player: progress, the resume point and My List may have changed.
@@ -625,6 +671,10 @@ class DetailsActivity : Screen() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
+            if (event.keyCode == KeyEvent.KEYCODE_BACK && resolvingStreams != null) {
+                cancelStreamResolution()
+                return true
+            }
             if (guideOpen) {
                 val focused = currentFocus
                 if (focused in seasonButtons.values) when (event.keyCode) {
