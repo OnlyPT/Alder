@@ -135,6 +135,7 @@ class MainActivity : Screen() {
     private lateinit var scroller: ScrollView
     private lateinit var content: LinearLayout
     private lateinit var header: FrameLayout
+    private var updateDot: View? = null
     private lateinit var genreStrip: HorizontalScrollView
     private val genreChips = mutableMapOf<String?, TextView>()
     private val listFilterChips = mutableMapOf<ListFilter, TextView>()
@@ -473,8 +474,10 @@ class MainActivity : Screen() {
     override fun onResume() {
         super.onResume()
         // ponytail: idle dim and the cinema screensaver are off (2026-10-26, not wanted yet); post `idle` here to bring the cinema back.
+        updateDot?.visibility = if (Updates.hasUpdate(this)) View.VISIBLE else View.GONE
         if (Updates.due(this)) background({ Updates.latest(applicationContext) }) { r ->
             val release = r.getOrNull()?.takeIf { newerVersion(it.version, Updates.mine(this)) } ?: return@background
+            updateDot?.visibility = View.VISIBLE
             if (Updates.offerOnce(this, release.version)) choose("Alder ${release.version} is ready", listOf("Later", "Install"),
                 "Install it now? It takes a minute, and your profiles and settings stay.") { if (it == 1) installUpdate(release) }
         }
@@ -613,6 +616,21 @@ class MainActivity : Screen() {
             setOnFocusChangeListener { _, has -> style(has) }
             setOnClickListener { profileMenu() }
         }
+        val dot = View(this).apply {
+            background = rounded(TUNGSTEN, 4)
+            elevation = dp(4).toFloat()
+            visibility = if (Updates.hasUpdate(this@MainActivity)) View.VISIBLE else View.GONE
+        }
+        updateDot = dot
+        val avatarBox = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
+            addView(avatar, FrameLayout.LayoutParams(dp(30), dp(30)))
+            addView(dot, FrameLayout.LayoutParams(dp(8), dp(8), Gravity.TOP or Gravity.END).apply {
+                topMargin = dp(1)
+                marginEnd = dp(1)
+            })
+        }
         // Every destination in one dark capsule, Search first as an icon (Left from Home), like Google TV's top bar.
         val nav = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
@@ -656,7 +674,7 @@ class MainActivity : Screen() {
             }.inNav()
         }
         nav.background = glassOver(nav, NAV_R + 4)
-        header.addView(avatar, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.START or Gravity.CENTER_VERTICAL))
+        header.addView(avatarBox, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.START or Gravity.CENTER_VERTICAL))
         header.addView(nav, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         header.addView(TextClock(this).apply {
             format12Hour = "h:mm a"
@@ -680,8 +698,19 @@ class MainActivity : Screen() {
     private val switchPage = Runnable { if (pending != page && navItems[pending]?.isFocused == true) { jump = false; showPage(pending) } }
 
     private fun profileMenu() {
-        choose(profile.name, listOf("Switch profile", "Settings")) { i ->
-            if (i == 0) switchProfile() else startActivity(Intent(this, SettingsActivity::class.java))
+        val update = Updates.available(this)
+        val options = if (update != null) listOf("Install update (${update.version})", "Switch profile", "Settings")
+                      else listOf("Switch profile", "Settings")
+        choose(profile.name, options) { i ->
+            if (update != null) {
+                when (i) {
+                    0 -> installUpdate(update)
+                    1 -> switchProfile()
+                    2 -> startActivity(Intent(this, SettingsActivity::class.java))
+                }
+            } else {
+                if (i == 0) switchProfile() else startActivity(Intent(this, SettingsActivity::class.java))
+            }
         }
     }
 
