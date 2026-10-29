@@ -730,7 +730,7 @@ abstract class Screen : Activity() {
         const val GLASS_HIGHLIGHT = 0x4DFFF5E6
         const val ROW_FOCUSED = 0x29F3EEE6
         const val PROGRESS_TRACK = 0x4DFFFFFF // light enough that a short fill still reads as a bar, not a dash
-        private val pool = Executors.newFixedThreadPool(6)
+        internal val pool = Executors.newFixedThreadPool(6)
     }
 }
 
