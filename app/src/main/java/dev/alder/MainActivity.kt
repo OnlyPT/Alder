@@ -87,6 +87,19 @@ internal fun listRowCount(titles: Int, columns: Int) = (titles + columns - 1) / 
 
 internal fun nextCatalogSection(total: Int, loaded: Int) = minOf(total, loaded + 4)
 
+internal fun combinedSectionTitle(title: String, isMovie: Boolean): String {
+    val suffix = if (isMovie) "Movies" else "Shows"
+    if (title.contains("movie", true) || title.contains("film", true) ||
+        title.contains("show", true) || title.contains("series", true)) return title
+    return when {
+        title.equals("For you", true) -> if (isMovie) "Movies for you" else "Shows for you"
+        title.contains(" in India", true) -> title.replace(" in India", " $suffix in India")
+        title.contains(" on Netflix", true) -> title.replace(" on Netflix", " $suffix on Netflix")
+        title.contains(" on Hotstar", true) -> title.replace(" on Hotstar", " $suffix on Hotstar")
+        else -> "$title $suffix"
+    }
+}
+
 internal fun catalogAnswerKey(page: String, title: String, genre: String?, sources: List<String>) =
     (listOf(page, title, genre.orEmpty()) + sources).joinToString("\u0000")
 
@@ -375,7 +388,26 @@ class MainActivity : Screen() {
      * A page's rows: catalogs with the same purpose share a row, and Shows and Movies end with a row per main genre (the
      * first catalog that filters by it) unless a row of that name is already there; the chips jump to these rows.
      */
-    private fun sections(p: Page, shelves: List<Pair<Addon.Catalog, Shelf>>): List<Triple<String, List<Pair<Addon.Catalog, Shelf>>, String?>> {
+    private fun sections(p: Page, shelves: List<Pair<Addon.Catalog, Shelf>>, combinedHome: Boolean = false): List<Triple<String, List<Pair<Addon.Catalog, Shelf>>, String?>> {
+        if (combinedHome) {
+            val homeShelves = shelves.filter { it.second.page == Page.HOME }
+            val movieShelves = shelves.filter { it.second.page == Page.MOVIES }
+            val showShelves = shelves.filter { it.second.page == Page.SHOWS }
+            val homeSections = homeShelves.map { Triple(it.second.title, listOf(it), null as String?) }
+            val movieSections = sections(Page.MOVIES, movieShelves).map { (title, sources, picked) ->
+                Triple(combinedSectionTitle(title, true), sources, picked)
+            }
+            val showSections = sections(Page.SHOWS, showShelves).map { (title, sources, picked) ->
+                Triple(combinedSectionTitle(title, false), sources, picked)
+            }
+            val combined = mutableListOf<Triple<String, List<Pair<Addon.Catalog, Shelf>>, String?>>()
+            val maxCount = maxOf(movieSections.size, showSections.size)
+            for (i in 0 until maxCount) {
+                if (i < movieSections.size) combined += movieSections[i]
+                if (i < showSections.size) combined += showSections[i]
+            }
+            return homeSections + combined
+        }
         val genres = catalogGenres(shelves.flatMap { it.first.genres })
         return if (!p.isCatalog) shelves.map { Triple(it.second.title, listOf(it), null as String?) } else {
             val merged = shelves.groupBy { shortRowName(it.second.title, genres) }.map { (name, list) -> Triple(name, list, null as String?) }
@@ -414,12 +446,19 @@ class MainActivity : Screen() {
     // the library's rows are redrawn, so the remote stays where it was on the rest of the page.
     override fun onRestart() {
         super.onRestart()
-        refreshLibrary?.invoke()
-        refreshAddons?.invoke()
+        val combined = Settings.combineTabs(this)
+        if (page == Page.HOME && combined != lastCombinedTabs) {
+            lastCombinedTabs = combined
+            showPage(Page.HOME)
+        } else {
+            refreshLibrary?.invoke()
+            refreshAddons?.invoke()
+        }
     }
 
     private var refreshAddons: (() -> Unit)? = null // the open page's add-on check, run again on coming back to Alder
 
+    private var lastCombinedTabs = false
     private var refreshLibrary: (() -> Unit)? = null // the open page's library rows (Home, Library), asked again
     private var last: View? = null // where the remote last was in the rows
 
@@ -1012,7 +1051,7 @@ class MainActivity : Screen() {
         indicatedRow = null
         track.animate().alpha(0f).setDuration(200).start()
         moreHint.alpha = 0f
-        if (p == Page.HOME) cinema = emptyList() // other pages keep Home's, so the screensaver works there too
+        if (p == Page.HOME) { lastCombinedTabs = Settings.combineTabs(this); cinema = emptyList() } // other pages keep Home's, so the screensaver works there too
         focusedSomething = false
         // The last page's title goes with it; an empty page (no library yet, no catalogs) shows none.
         heroItem = null
@@ -1092,9 +1131,11 @@ class MainActivity : Screen() {
             if (built || g != generation) return
             built = true
             builtFrom = addons.map { it.id }
+            val combinedHome = p == Page.HOME && Settings.combineTabs(this@MainActivity)
             // Each catalog on its page under a plain name, personal rows first; the sort keeps the addons' order within a rank.
-            val shelves = addons.flatMap { it.catalogs }.mapNotNull { c -> shelf(c)?.takeIf { it.page == p }?.let { c to it } }
-                .sortedBy { it.second.rank }
+            val shelves = addons.flatMap { it.catalogs }.mapNotNull { c ->
+                shelf(c)?.takeIf { it.page == p || (combinedHome && (it.page == Page.MOVIES || it.page == Page.SHOWS)) }?.let { c to it }
+            }.sortedBy { it.second.rank }
             val catalogs = shelves.map { it.first }
             if (catalogs.isEmpty()) {
                 val what = when (p) { Page.MOVIES -> "movie"; Page.LIVE -> "live"; else -> "show" }
@@ -1104,7 +1145,7 @@ class MainActivity : Screen() {
                     .apply { setPadding(dp(PAD), 0, dp(PAD), 0) })
             }
             val genres = catalogGenres(catalogs.flatMap { it.genres })
-            val sections = sections(p, shelves)
+            val sections = sections(p, shelves, combinedHome)
             val genreNames = (if (p.isCatalog) sections.take(nextCatalogSection(sections.size, 0)).map { it.first }.filter { name -> genres.any { it.equals(name, true) } }
                 else emptyList()).toMutableList()
             val genreResults = mutableMapOf<String, Boolean>()

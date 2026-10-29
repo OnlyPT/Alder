@@ -14,6 +14,11 @@ Write every entry in ASD-STE100 Simplified Technical English (STE):
 
 Put changes that are not released under `## Unreleased`. Before each release, read all of `## Unreleased` again and rewrite each entry that does not obey these rules. Then rename that heading to the version number.
 
+## Unreleased
+
+### New
+- **Combine tabs on Home.** Turn on **Settings → Profile → Combine tabs on Home**. The **Home** tab shows movies and shows below Continue Watching.
+
 ## 1.2
 
 ### New

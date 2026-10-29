@@ -41,9 +41,10 @@ object Settings {
     fun hidden(c: Context) = runCatching { org.json.JSONObject(prefs(c).getString(profileKey(c, "hidden"), null)!!) }
         .getOrDefault(org.json.JSONObject())
     fun setHidden(c: Context, all: org.json.JSONObject) = prefs(c).edit().putString(profileKey(c, "hidden"), all.toString()).apply()
+    fun combineTabs(c: Context) = prefs(c).getBoolean(profileKey(c, "combineTabs"), prefs(c).getBoolean("combineTabs", false))
     /** A removed profile's taste goes with it, so a new profile in its place starts with none. */
     fun forget(c: Context, profileId: String) = prefs(c).edit().apply {
-        listOf("release", "dub", "audioLang", "subLang", "hidden").forEach { remove("$it@$profileId") }
+        listOf("release", "dub", "audioLang", "subLang", "hidden", "combineTabs").forEach { remove("$it@$profileId") }
         prefs(c).all.keys.filter { it.startsWith("title:") && it.endsWith("@$profileId") }.forEach(::remove)
     }.apply()
 
@@ -416,6 +417,9 @@ class SettingsActivity : Screen() {
                     unhideMenu(::count)
                 }
                 count()
+                choiceRow(Choice("combineTabs", "Combine tabs on Home",
+                    "Show movies and shows below Continue Watching on the Home tab.",
+                    listOf(false to "Off", true to "On"), perProfile = true))
             }
             Group.LANGUAGE -> actionRow("App language", Locale.getDefault().displayLanguage,
                 "The app follows this TV's language setting.") {
@@ -530,7 +534,7 @@ class SettingsActivity : Screen() {
     private fun choiceRow(c: Choice) {
         fun current() = c.values.indexOfFirst { it.first == stored(c) }.coerceAtLeast(0)
         // A switch only where the choice is On or Off; "Best source / Show sources" is a choice with words.
-        val isSwitch = c.values.map { it.second } == listOf("On", "Off")
+        val isSwitch = c.values.map { it.second }.toSet() == setOf("On", "Off")
         val words = text("", BODY, color = TEXT_2)
         val track = FrameLayout(this).apply { background = rounded(GLASS_EDGE, 9) }
         val knob = View(this)
@@ -543,7 +547,7 @@ class SettingsActivity : Screen() {
         var focused = false
         fun draw() {
             val index = current()
-            val on = isSwitch && c.values[index].first == true
+            val on = isSwitch && (c.values[index].first == true || c.values[index].second == "On")
             words.setTextColor(if (focused) TEXT else TEXT_2)
             words.text = if (isSwitch) c.values[index].second
                 else if (focused) "‹  " + c.values[index].second + "  ›" else c.values[index].second

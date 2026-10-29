@@ -105,6 +105,17 @@ class ScreenDesignTest {
         assertEquals("Adventure", shortRowName("Short & Sweet Adventure", listOf("Drama", "Adventure")))
     }
 
+    @Test fun combinedHomeRowsIdentifyMoviesAndShows() {
+        assertEquals("Popular Movies", combinedSectionTitle("Popular", true))
+        assertEquals("Popular Shows", combinedSectionTitle("Popular", false))
+        assertEquals("Action Movies", combinedSectionTitle("Action", true))
+        assertEquals("Action Shows", combinedSectionTitle("Action", false))
+        assertEquals("Movies for you", combinedSectionTitle("For you", true))
+        assertEquals("Shows for you", combinedSectionTitle("For you", false))
+        assertEquals("Trending Movies in India", combinedSectionTitle("Trending in India", true))
+        assertEquals("Popular - Movies", combinedSectionTitle("Popular - Movies", true))
+    }
+
     @Test fun runtimeReadsInHoursAndMinutes() {
         assertEquals("2h 27m", runtime("147 min"))
         assertEquals("1h 05m", runtime("65 min"))
