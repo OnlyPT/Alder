@@ -82,6 +82,10 @@ class DetailsActivity : Screen() {
             }, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
                 topMargin = dp(36); rightMargin = dp(PAD)
             })
+            val (loading, loadingText) = loadingOverlay("Finding sources…")
+            loadingView = loading
+            loadingStatus = loadingText
+            addView(loadingView, FrameLayout.LayoutParams(-1, -1))
         }
         setWindowed(root, heroArt)
 
@@ -593,13 +597,13 @@ class DetailsActivity : Screen() {
     // ---------- shared ----------
 
     private var resolvingStreams: Cancellable? = null
-    private var shimmerTarget: View? = null
+    private lateinit var loadingView: FrameLayout
+    private lateinit var loadingStatus: TextView
 
     private fun cancelStreamResolution() {
         resolvingStreams?.cancel()
         resolvingStreams = null
-        shimmerTarget?.stopShimmer()
-        shimmerTarget = null
+        if (::loadingView.isInitialized) loadingView.visibility = View.GONE
     }
 
     private fun openSources(videoId: String, startOver: Boolean, next: String? = null, label: String? = null, pick: Boolean = false) {
@@ -622,9 +626,9 @@ class DetailsActivity : Screen() {
             return
         }
 
-        val target = currentFocus ?: playButton
-        shimmerTarget = target
-        target.startShimmer(if (target === playButton) BUTTON_H / 2 else 9)
+        loadingStatus.text = "Finding sources…"
+        loadingView.visibility = View.VISIBLE
+        loadingView.bringToFront()
 
         resolvingStreams = StreamsResolver.resolve(
             context = this,

@@ -21,7 +21,7 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - **30 GB file limit.** Select **30 GB** in **Settings → Largest file**.
 
 ### Easier to use
-- **Direct play.** When you select Play, Alder starts the video directly. A light shimmer shows on the button while Alder finds the best source. To see all sources, hold OK.
+- **Direct play.** When you select Play, Alder starts the video directly. A progress indicator shows while Alder finds the best source. To see all sources, hold OK.
 - **Update notification dot.** A dot on your profile avatar shows when a new version of Alder is ready.
 - **Install an update from the profile menu.** Select your profile avatar, then select **Install update**.
 - **Faster update checks.** Alder checks for new releases every 4 hours instead of once a day.

@@ -394,6 +394,10 @@ class MainActivity : Screen() {
                 topMargin = dp(HEADER_H + 6)
             })
             addView(header().apply { alpha = 0f }, FrameLayout.LayoutParams(-1, dp(HEADER_H))) // fades in if the page wants it
+            val (loading, loadingText) = loadingOverlay("Finding sources…")
+            loadingView = loading
+            loadingStatus = loadingText
+            addView(loadingView, FrameLayout.LayoutParams(-1, -1))
         })
 
         window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { _, now ->
@@ -484,13 +488,13 @@ class MainActivity : Screen() {
     }
 
     private var resolvingStreams: Cancellable? = null
-    private var shimmerTarget: View? = null
+    private lateinit var loadingView: FrameLayout
+    private lateinit var loadingStatus: TextView
 
     private fun cancelStreamResolution() {
         resolvingStreams?.cancel()
         resolvingStreams = null
-        shimmerTarget?.stopShimmer()
-        shimmerTarget = null
+        if (::loadingView.isInitialized) loadingView.visibility = View.GONE
     }
 
     override fun onPause() {
@@ -2059,9 +2063,9 @@ class MainActivity : Screen() {
             return
         }
 
-        val target = currentFocus
-        shimmerTarget = target
-        target?.startShimmer(TILE_RADIUS)
+        loadingStatus.text = "Finding sources…"
+        loadingView.visibility = View.VISIBLE
+        loadingView.bringToFront()
 
         resolvingStreams = StreamsResolver.resolve(
             context = this,
