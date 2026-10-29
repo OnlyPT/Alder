@@ -217,6 +217,8 @@ class Meta(json: JSONObject) {
     val background = json.text("background")
     /** The title as artwork (AIOMetadata and Cinemeta provide it), shown instead of plain text when present. */
     val logo = json.text("logo")
+    /** "poster" (the default), "square" or "landscape": live channels send their logo as a square or wide picture. */
+    val posterShape = json.text("posterShape")
     val description = json.text("description")
     val year = json.text("releaseInfo")?.trimEnd('–', '-', ' ') // "2026–" (still running) reads as 2026 everywhere
     val runtime = json.text("runtime")?.let(::runtime)
