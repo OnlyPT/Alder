@@ -191,6 +191,7 @@ class SettingsActivity : Screen() {
     private val groupViews = mutableMapOf<Group, View>()
     private val groupDots = mutableMapOf<Group, TextView>()
     private val groupLabels = mutableMapOf<Group, TextView>()
+    private val groupBadges = mutableMapOf<Group, View>()
     private val choiceRows = mutableSetOf<View>()
     private val refresh = mutableListOf<() -> Unit>()
     private var selectedGroup: Group? = null
@@ -267,6 +268,7 @@ class SettingsActivity : Screen() {
 
     override fun onResume() {
         super.onResume()
+        groupBadges[Group.ABOUT]?.visibility = if (Updates.hasUpdate(this)) View.VISIBLE else View.GONE
         if (::profileName.isInitialized) {
             val name = Profiles.active(this)?.name
             profileName.text = name?.let { "Profile " + it } ?: ""
@@ -307,11 +309,16 @@ class SettingsActivity : Screen() {
             imageTintList = ColorStateList.valueOf(TEXT_3)
         } else text(group.glyph, BODY, color = TEXT_3).apply { gravity = Gravity.CENTER }
         val label = text(group.label, BODY, bold = true, color = TEXT_2)
+        val badge = View(this).apply {
+            background = rounded(TUNGSTEN, 3)
+            visibility = if (group == Group.ABOUT && Updates.hasUpdate(this@SettingsActivity)) View.VISIBLE else View.GONE
+        }
         val row = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             addView(dot, LinearLayout.LayoutParams(dp(10), -1))
             addView(icon, LinearLayout.LayoutParams(dp(14), dp(14)).apply { marginStart = dp(4) })
-            addView(label, LinearLayout.LayoutParams(-1, -2).apply { marginStart = dp(10) })
+            addView(label, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10) })
+            addView(badge, LinearLayout.LayoutParams(dp(6), dp(6)).apply { marginEnd = dp(8) })
             setPadding(dp(2), 0, dp(4), 0)
             rowFocus(8, rest = { if (selectedGroup == group) tile(8) else null }) { has ->
                 if (has) showGroup(group)
@@ -321,6 +328,7 @@ class SettingsActivity : Screen() {
         groupViews[group] = row
         groupDots[group] = dot
         groupLabels[group] = label
+        groupBadges[group] = badge
         groups.addView(row, LinearLayout.LayoutParams(-1, dp(34)).apply { bottomMargin = dp(1) })
     }
 
@@ -446,6 +454,7 @@ class SettingsActivity : Screen() {
                 background({ Updates.latest(applicationContext) }) { r ->
                     val release = r.getOrNull()
                     found = release?.takeIf { newerVersion(it.version, Updates.mine(this)) }
+                    groupBadges[Group.ABOUT]?.visibility = if (found != null) View.VISIBLE else View.GONE
                     value.text = when {
                         found != null -> "Install ${found!!.version}  ›"
                         release == null -> "Couldn't check · Try again  ›"

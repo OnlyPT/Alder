@@ -20,6 +20,11 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - **Live TV and sport.** If your add-ons have TV channels, sport or events, select **Live** at the top. Select a channel to play it. To choose a source, hold OK.
 - **30 GB file limit.** Select **30 GB** in **Settings → Largest file**.
 
+### Easier to use
+- **Update notification dot.** A dot on your profile avatar shows when a new version of Alder is ready.
+- **Install an update from the profile menu.** Select your profile avatar, then select **Install update**.
+- **Faster update checks.** Alder checks for new releases every 4 hours instead of once a day.
+
 ## 1.2
 
 ### New
