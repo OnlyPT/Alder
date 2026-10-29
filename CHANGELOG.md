@@ -25,6 +25,9 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - **Install an update from the profile menu.** Select your profile avatar, then select **Install update**.
 - **Faster update checks.** Alder checks for new releases every 4 hours instead of once a day.
 
+### Easier to use
+- **Direct play.** When you select Play, Alder starts the video directly. A light shimmer shows on the button while Alder finds the best source. To see all sources, hold OK.
+
 ## 1.2
 
 ### New
