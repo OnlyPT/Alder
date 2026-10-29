@@ -394,6 +394,10 @@ class MainActivity : Screen() {
                 topMargin = dp(HEADER_H + 6)
             })
             addView(header().apply { alpha = 0f }, FrameLayout.LayoutParams(-1, dp(HEADER_H))) // fades in if the page wants it
+            val (loading, loadingText) = loadingOverlay("Finding sources…")
+            loadingView = loading
+            loadingStatus = loadingText
+            addView(loadingView, FrameLayout.LayoutParams(-1, -1))
         })
 
         window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { _, now ->
@@ -483,7 +487,18 @@ class MainActivity : Screen() {
         }
     }
 
+    private var resolvingStreams: Cancellable? = null
+    private lateinit var loadingView: FrameLayout
+    private lateinit var loadingStatus: TextView
+
+    private fun cancelStreamResolution() {
+        resolvingStreams?.cancel()
+        resolvingStreams = null
+        if (::loadingView.isInitialized) loadingView.visibility = View.GONE
+    }
+
     override fun onPause() {
+        cancelStreamResolution()
         super.onPause()
         main.removeCallbacks(idle)
         main.removeCallbacks(idleDim)
@@ -492,6 +507,10 @@ class MainActivity : Screen() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
+            if (event.keyCode == KeyEvent.KEYCODE_BACK && resolvingStreams != null) {
+                cancelStreamResolution()
+                return true
+            }
             touched = true
             dimHome(false)
         }
@@ -2024,11 +2043,12 @@ class MainActivity : Screen() {
 
     /** Resume: straight to the sources for the episode Continue Watching points at; with [pick] (held OK) they're all listed. */
     private fun play(item: Item, pick: Boolean = false) {
+        if (resolvingStreams != null) return
         val videoId = item.videoId ?: item.id
         val videos = metas[item.id]?.videos.orEmpty()
         val next = videos.getOrNull(videos.indexOfFirst { it.id == videoId } + 1)?.takeIf { videos.any { it.id == videoId } }
         val episode = item.left?.substringBefore(" · ")?.takeIf { item.type == "series" && it.startsWith("S") }
-        startActivity(Intent(this, StreamsActivity::class.java)
+        val intent = Intent(this, StreamsActivity::class.java)
             .putExtra("type", item.type).putExtra("id", item.id).putExtra("name", item.name).putExtra("poster", item.poster)
             .putExtra("videoId", videoId).putExtra("nextVideoId", next?.id).putExtra("pick", pick)
             .putExtra("background", metas[item.id]?.background ?: item.art)
@@ -2036,7 +2056,33 @@ class MainActivity : Screen() {
             .putExtra("still", videos.firstOrNull { it.id == videoId }?.thumbnail)
             .putExtra("runtime", metas[item.id]?.runtime)
             .putExtra("episode", videos.firstOrNull { it.id == videoId }?.let { "S${it.season} E${it.episode}  ·  ${it.title}" })
-            .putExtra("label", listOfNotNull(item.name, episode).joinToString("  ·  ")))
+            .putExtra("label", listOfNotNull(item.name, episode).joinToString("  ·  "))
+
+        if (pick || Settings.alwaysList(this)) {
+            startActivity(intent)
+            return
+        }
+
+        loadingStatus.text = "Finding sources…"
+        loadingView.visibility = View.VISIBLE
+        loadingView.bringToFront()
+
+        resolvingStreams = StreamsResolver.resolve(
+            context = this,
+            type = item.type,
+            videoId = videoId,
+            metaId = item.id,
+            authKey = authKey,
+            onReady = { best ->
+                cancelStreamResolution()
+                startActivity(Intent(this, PlayerActivity::class.java).putExtras(intent)
+                    .putExtra("sources", org.json.JSONArray(best.map { it.toJson() }).toString()))
+            },
+            onFallback = {
+                cancelStreamResolution()
+                startActivity(intent)
+            }
+        )
     }
 
     private fun openDetails(item: Item) {
