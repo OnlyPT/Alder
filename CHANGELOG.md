@@ -25,6 +25,7 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 - **Alder website.** The site shows the app screens and makes the download and setup steps easy to find.
 
 ### Fixes
+- **Missing sources.** The source list tells you which add-ons gave no sources, and why. Before, Alder told you only when no source was available. An add-on that finds only torrents needs a debrid service.
 - **Backups.** Alder does not put profiles, sign-ins, or PINs in Android backups or device transfers. After a restore to a new TV, sign in to each profile again.
 - **Android 6 and 7.** Alder starts on Android 6 and 7 TVs. Before, Alder closed and the TV showed the home screen.
 
