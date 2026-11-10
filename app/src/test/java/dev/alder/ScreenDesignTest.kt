@@ -194,6 +194,13 @@ class ScreenDesignTest {
         assertEquals(4, listRowCount(24, 6))
     }
 
+    @Test fun eachCatalogRowKeepsItsOwnPlace() {
+        assertEquals(0, landingCard(from = 5, nextSelected = 0, nextSize = 20, grid = false))
+        assertEquals(3, landingCard(from = 5, nextSelected = 3, nextSize = 20, grid = false))
+        assertEquals(5, landingCard(from = 5, nextSelected = 0, nextSize = 6, grid = true))
+        assertEquals(1, landingCard(from = 5, nextSelected = 0, nextSize = 2, grid = true))
+    }
+
     @Test fun catalogsContinueAfterTheFirstTwentyInSmallBatches() {
         assertEquals(4, nextCatalogSection(37, 0))
         assertEquals(8, nextCatalogSection(37, 4))

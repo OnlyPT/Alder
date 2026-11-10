@@ -106,6 +106,13 @@ internal fun listRowCount(titles: Int, columns: Int) = (titles + columns - 1) / 
 
 internal fun nextCatalogSection(total: Int, loaded: Int) = minOf(total, loaded + 4)
 
+/**
+ * The card Up or Down lands on in the next row: in My List's grid, the same column; in a row of titles, the card that
+ * row had last (the first, if new). Each catalog is its own list, so the place in one says nothing about another.
+ */
+internal fun landingCard(from: Int, nextSelected: Int, nextSize: Int, grid: Boolean) =
+    if (grid) minOf(from, nextSize - 1) else nextSelected
+
 internal fun homeSectionTitle(title: String, isMovie: Boolean): String {
     if (title.contains("movie", true) || title.contains("film", true) ||
         title.contains("show", true) || title.contains("series", true)) return title
@@ -239,7 +246,7 @@ class MainActivity : Screen() {
         val bright = samplePixels(src, 16, 24)?.let { brightLeft(it, 16) } ?: false
         shade(canvas, w, h, bright)
         src.recycle()
-        out.copy(Bitmap.Config.HARDWARE, false).also { out.recycle() }
+        out.toGpu()
     }
 
     /**
@@ -258,7 +265,7 @@ class MainActivity : Screen() {
             shader = RadialGradient(w * 0.7f, h * 0.32f, w * 0.7f, tint and 0x00FFFFFF or (0xB3 shl 24), tint and 0x00FFFFFF, Shader.TileMode.CLAMP)
         })
         shade(canvas, w, h, false)
-        out.copy(Bitmap.Config.HARDWARE, false).also { out.recycle() }
+        out.toGpu()
     }
 
     /** The left darkening behind the words, the long one down to the cards, and a light one under the top bar. */
@@ -664,7 +671,8 @@ class MainActivity : Screen() {
                 val next = ordered.getOrNull(at + if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) 1 else -1)
                 if (next != null) {
                     next.view.visibility = View.VISIBLE
-                    if (next.cards.getOrNull(minOf(ordered[at].selected, next.cards.lastIndex))?.requestFocus() == true) return true
+                    val to = landingCard(ordered[at].selected, next.selected, next.cards.size, next.grid)
+                    if (next.cards.getOrNull(to)?.requestFocus() == true) return true
                 }
             }
         }
