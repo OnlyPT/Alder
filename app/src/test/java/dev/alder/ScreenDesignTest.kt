@@ -185,6 +185,13 @@ class ScreenDesignTest {
         assertEquals(100, end.loadEnd)
         assertEquals(83, end.farLeftEnd)
         assertEquals(100, end.farRightStart)
+
+        // The pool runs the newest request first: the first card on the screen is asked for last.
+        assertEquals((8 until 14).toList() + (7 downTo 0).toList(), cardLoadOrder(start))
+        val order = cardLoadOrder(middle)
+        assertEquals(listOf(46, 47, 48, 49, 58), order.take(5))
+        assertEquals(50, order.last())
+        assertEquals((46 until 64).toSet(), order.toSet())
     }
 
     @Test fun myListKeepsTheLastPartialRow() {

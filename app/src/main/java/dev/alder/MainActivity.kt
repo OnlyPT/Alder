@@ -89,7 +89,17 @@ internal data class CardVisibilityWindow(
     val loadEnd: Int,
     val farLeftEnd: Int,
     val farRightStart: Int,
+    val visibleFirst: Int = loadStart,
+    val visibleLast: Int = loadEnd,
 )
+
+/**
+ * The order to ask for a row's pictures: the cards just off the screen first, then the visible ones from the right.
+ * Images' pool runs the newest request first, so the first card on the screen loads first.
+ */
+internal fun cardLoadOrder(w: CardVisibilityWindow): List<Int> =
+    (w.loadStart until w.loadEnd).filter { it < w.visibleFirst || it >= w.visibleLast } +
+        (w.visibleLast - 1 downTo w.visibleFirst)
 
 internal fun cardLoadWindow(scrollX: Int, viewWidth: Int, step: Int, total: Int): CardVisibilityWindow {
     if (step <= 0 || total <= 0) return CardVisibilityWindow(0, 0, 0, total)
@@ -99,7 +109,7 @@ internal fun cardLoadWindow(scrollX: Int, viewWidth: Int, step: Int, total: Int)
     val loadEnd = (visibleLast + 6).coerceAtMost(total)
     val farLeftEnd = (visibleFirst - 12).coerceAtLeast(0)
     val farRightStart = (visibleLast + 12).coerceAtMost(total)
-    return CardVisibilityWindow(loadStart, loadEnd, farLeftEnd, farRightStart)
+    return CardVisibilityWindow(loadStart, loadEnd, farLeftEnd, farRightStart, visibleFirst.coerceAtMost(visibleLast), visibleLast)
 }
 
 internal fun listRowCount(titles: Int, columns: Int) = (titles + columns - 1) / columns
@@ -2305,9 +2315,7 @@ class MainActivity : Screen() {
         for (i in 0 until window.farLeftEnd) {
             if (i != r.selected) r.cards[i].unload()
         }
-        for (i in window.loadEnd - 1 downTo window.loadStart) {
-            r.cards[i].load()
-        }
+        cardLoadOrder(window).forEach { r.cards[it].load() }
         for (i in window.farRightStart until r.cards.size) {
             if (i != r.selected) r.cards[i].unload()
         }
