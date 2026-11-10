@@ -24,6 +24,9 @@ Put changes that are not released under `## Unreleased`. Before each release, re
 ### Easier to use
 - **Alder website.** The site shows the app screens and makes the download and setup steps easy to find.
 
+### Fixes
+- **Android 6 and 7.** Alder starts on Android 6 and 7 TVs. Before, Alder closed and the TV showed the home screen.
+
 ## 1.3.1
 
 ### Fixes
