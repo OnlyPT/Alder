@@ -84,7 +84,41 @@ internal fun shortRowName(name: String, genres: Collection<String> = emptyList()
 
 internal fun isAddonMessage(name: String) = name.contains("Authentication Required", ignoreCase = true)
 
-internal fun initialRowCards(wide: Boolean): Int = if (wide) 8 else 14
+internal data class CardVisibilityWindow(
+    val loadStart: Int,
+    val loadEnd: Int,
+    val farLeftEnd: Int,
+    val farRightStart: Int,
+    val visibleFirst: Int = loadStart,
+    val visibleLast: Int = loadEnd,
+)
+
+/**
+ * The order to ask for a row's pictures: the cards just off the screen first, then the visible ones from the right.
+ * Images' pool runs the newest request first, so the first card on the screen loads first.
+ */
+internal fun cardLoadOrder(w: CardVisibilityWindow): List<Int> =
+    (w.loadStart until w.loadEnd).filter { it < w.visibleFirst || it >= w.visibleLast } +
+        (w.visibleLast - 1 downTo w.visibleFirst)
+
+internal fun cardLoadWindow(scrollX: Int, viewWidth: Int, step: Int, total: Int): CardVisibilityWindow {
+    if (step <= 0 || total <= 0) return CardVisibilityWindow(0, 0, 0, total)
+    val visibleFirst = (scrollX / step).coerceAtLeast(0)
+    val visibleLast = ((scrollX + viewWidth + step - 1) / step).coerceAtMost(total)
+    val loadStart = (visibleFirst - 4).coerceAtLeast(0)
+    val loadEnd = (visibleLast + 6).coerceAtMost(total)
+    val farLeftEnd = (visibleFirst - 12).coerceAtLeast(0)
+    val farRightStart = (visibleLast + 12).coerceAtMost(total)
+    return CardVisibilityWindow(loadStart, loadEnd, farLeftEnd, farRightStart, visibleFirst.coerceAtMost(visibleLast), visibleLast)
+}
+
+// Cards a row starts with: past the screen's width (1,280 dp at most on a TV), so the first press already slides the
+// row. 9 posters (1,000 dp with the margins) barely passed 960 dp, so the remote walked across a still row and the row
+// jumped when the next page came. Wide cards pass it at 9 already.
+internal const val ROW_START_CARDS = 14
+internal const val WIDE_ROW_START_CARDS = 9
+
+internal fun initialRowCards(wide: Boolean): Int = if (wide) WIDE_ROW_START_CARDS else ROW_START_CARDS
 
 internal fun shouldSkipRepeat(held: Boolean, wide: Boolean, repeatCount: Int): Boolean =
     wide && held && repeatCount % 2 != 0
@@ -94,9 +128,17 @@ internal fun rowGlideDuration(held: Boolean, wide: Boolean, repeatDelay: Long): 
 
 internal fun artDelay(held: Boolean, cached: Boolean, ready: Boolean): Long =
     if (ready) 0L else if (held) 280L else if (cached) 0L else 120L
+
 internal fun listRowCount(titles: Int, columns: Int) = (titles + columns - 1) / columns
 
 internal fun nextCatalogSection(total: Int, loaded: Int) = minOf(total, loaded + 4)
+
+/**
+ * The card Up or Down lands on in the next row: in My List's grid, the same column; in a row of titles, the card that
+ * row had last (the first, if new). Each catalog is its own list, so the place in one says nothing about another.
+ */
+internal fun landingCard(from: Int, nextSelected: Int, nextSize: Int, grid: Boolean) =
+    if (grid) minOf(from, nextSize - 1) else nextSelected
 
 internal fun homeSectionTitle(title: String, isMovie: Boolean): String {
     if (title.contains("movie", true) || title.contains("film", true) ||
@@ -232,7 +274,7 @@ class MainActivity : Screen() {
         val bright = samplePixels(src, 16, 24)?.let { brightLeft(it, 16) } ?: false
         shade(canvas, w, h, bright)
         src.recycle()
-        out.copy(Bitmap.Config.HARDWARE, false).also { out.recycle() }
+        out.toGpu()
     }
 
     /**
@@ -251,7 +293,7 @@ class MainActivity : Screen() {
             shader = RadialGradient(w * 0.7f, h * 0.32f, w * 0.7f, tint and 0x00FFFFFF or (0xB3 shl 24), tint and 0x00FFFFFF, Shader.TileMode.CLAMP)
         })
         shade(canvas, w, h, false)
-        out.copy(Bitmap.Config.HARDWARE, false).also { out.recycle() }
+        out.toGpu()
     }
 
     /** The left darkening behind the words, the long one down to the cards, and a light one under the top bar. */
@@ -657,7 +699,8 @@ class MainActivity : Screen() {
                 val next = ordered.getOrNull(at + if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) 1 else -1)
                 if (next != null) {
                     next.view.visibility = View.VISIBLE
-                    if (next.cards.getOrNull(minOf(ordered[at].selected, next.cards.lastIndex))?.requestFocus() == true) return true
+                    val to = landingCard(ordered[at].selected, next.selected, next.cards.size, next.grid)
+                    if (next.cards.getOrNull(to)?.requestFocus() == true) return true
                 }
             }
         }
@@ -1924,6 +1967,7 @@ class MainActivity : Screen() {
             // Keep the cards at the current scroll position visible while the strip slides toward its destination.
             val right = scroller.width - dp(PAD) / 2
             showVisibleCards()
+            loadRest(this@Row)
             // The caption sits under the focused card, also where the row stops sliding near its end.
             captionX = (cards[index].left - targetScroll - dp(PAD)).coerceAtLeast(0)
             val beyond = cards.any { it.right - targetScroll > right }
@@ -1962,8 +2006,8 @@ class MainActivity : Screen() {
                     strip.addView(card, LinearLayout.LayoutParams(dp(cardW), dp(cardH)).apply { marginStart = dp(CARD_GAP) })
                     card.alpha = 0f // shows once focus moves near, like the cards past the right margin
                     card.dim(active)
-                    if (loaded) card.load()
                 }
+                if (loaded) loadRest(this@Row)
                 if (active && !grid) strip.post {
                     if (active) {
                         placeCaption()
@@ -2130,6 +2174,7 @@ class MainActivity : Screen() {
 
             /** Far off screen: let the pictures go. */
             fun unload() {
+                if (!wanted && shown == null && image.drawable == null) return
                 wanted = false
                 shown = null
                 image.tag = null
@@ -2284,7 +2329,7 @@ class MainActivity : Screen() {
             r.view.alpha = if (!r.view.hasFocus() && page != Page.LIBRARY && y + r.view.height <= top + dp(2)) 0f else 1f
             if (near && !r.loaded) {
                 r.loaded = true
-                r.cards.take(FIRST).asReversed().forEach { it.load() }
+                loadRest(r)
             } else if (far && r.loaded) {
                 r.loaded = false
                 r.cards.forEach { it.unload() }
@@ -2292,13 +2337,19 @@ class MainActivity : Screen() {
         }
     }
 
-    /** A row scrolled sideways: its cards past the first screenful load too. */
+    /** A row scrolled sideways: its cards near the screen load, and cards far away let pictures go. */
     private fun loadRest(r: Row) {
         if (!r.loaded) return
         val step = dp(r.cardW + CARD_GAP)
-        val first = (r.scroller.scrollX / step - 1).coerceAtLeast(0)
-        val last = ((r.scroller.scrollX + r.scroller.width) / step + 2).coerceAtMost(r.cards.size)
-        for (i in first until last) r.cards[i].load()
+        val w = if (r.scroller.width > 0) r.scroller.width else resources.displayMetrics.widthPixels
+        val window = cardLoadWindow(r.scroller.scrollX, w, step, r.cards.size)
+        for (i in 0 until window.farLeftEnd) {
+            if (i != r.selected) r.cards[i].unload()
+        }
+        cardLoadOrder(window).forEach { r.cards[it].load() }
+        for (i in window.farRightStart until r.cards.size) {
+            if (i != r.selected) r.cards[i].unload()
+        }
     }
 
     private fun offsetIn(v: View): Int {
@@ -2372,8 +2423,7 @@ class MainActivity : Screen() {
         // Building every row's 25 cards at once held the main thread for over a second on a page switch (about 3.6 ms
         // a card), so the first row's posters, already decoded, didn't show until every row was made.
         const val FOCUS_ROOM = 8 // dp around the title block for a focused pill to grow into
-        const val START = 14
-        const val START_WIDE = 8
+        const val START = ROW_START_CARDS
         const val ROW_LATER = 350L // ms after a page opens before its rows out of sight are made
         const val ROW_STAGGER = 60L // ms between them
         const val PAGE = 12
