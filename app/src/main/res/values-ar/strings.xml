@@ -394,6 +394,9 @@
 
     <!-- Search -->
     <string name="search_clear">مسح البحث</string>
+    <string name="search_voice">البحث الصوتي</string>
+    <string name="search_voice_listening">جارٍ الاستماع…</string>
+    <string name="search_voice_permission">اسمح بالوصول إلى الميكروفون في إعدادات التلفاز لاستخدام البحث الصوتي.</string>
     <string name="search_voice_unavailable">البحث الصوتي غير متاح</string>
     <string name="search_space">مسافة</string>
     <string name="search_recent">الأخيرة</string>

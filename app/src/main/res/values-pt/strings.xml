@@ -381,6 +381,9 @@
 
     <!-- Search -->
     <string name="search_clear">Limpar busca</string>
+    <string name="search_voice">Busca por voz</string>
+    <string name="search_voice_listening">Ouvindo…</string>
+    <string name="search_voice_permission">Permita o acesso ao microfone nas configurações da TV para usar a busca por voz.</string>
     <string name="search_voice_unavailable">Busca por voz indisponível</string>
     <string name="search_space">Espaço</string>
     <string name="search_recent">Recentes</string>

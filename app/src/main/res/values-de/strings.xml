@@ -377,6 +377,9 @@
 
     <!-- Search -->
     <string name="search_clear">Suche löschen</string>
+    <string name="search_voice">Sprachsuche</string>
+    <string name="search_voice_listening">Zuhören…</string>
+    <string name="search_voice_permission">Erlaube den Mikrofonzugriff in den TV-Einstellungen, um die Sprachsuche zu nutzen.</string>
     <string name="search_voice_unavailable">Sprachsuche nicht verfügbar</string>
     <string name="search_space">Leertaste</string>
     <string name="search_recent">Zuletzt</string>

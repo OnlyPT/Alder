@@ -1,11 +1,16 @@
 package dev.alder
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.text.Editable
 import android.text.TextUtils
 import android.text.TextWatcher
@@ -74,6 +79,10 @@ class SearchActivity : Screen() {
     private var firstKey: View? = null
     private var lastKey: View? = null
     private var lastKeyboardFocus: View? = null
+    private var micButton: ImageView? = null
+    private var speechRecognizer: SpeechRecognizer? = null
+    private var canSpeak = false
+    private var listening = false
     private var firstResult: View? = null
     private var focused: Meta? = null
     private var numeric = false
@@ -358,16 +367,134 @@ class SearchActivity : Screen() {
         key("−", controls, 2, false) { append("-") }
         key("⌫", controls, 5, true) { delete() }
         val last = keyRow()
-        key(getString(R.string.search_space).uppercase(), last, 8, true) { append(" ") }
-        last.addView(ImageView(this).apply {
+        val hasSpeechActivity = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).resolveActivity(packageManager) != null
+        val hasSpeechService = SpeechRecognizer.isRecognitionAvailable(this)
+        canSpeak = hasSpeechActivity || hasSpeechService
+        key(getString(R.string.search_space).uppercase(), last, 8, !canSpeak) { append(" ") }
+        val mic = ImageView(this).apply {
             setImageResource(R.drawable.ic_mic)
-            imageTintList = ColorStateList.valueOf(TEXT_3)
             scaleType = ImageView.ScaleType.CENTER
-            alpha = 0.45f
-            contentDescription = getString(R.string.search_voice_unavailable)
-            isFocusable = false
-            isClickable = false
-        }, LinearLayout.LayoutParams(dp(49), -1).apply { marginStart = dp(3) })
+            if (canSpeak) {
+                imageTintList = ColorStateList.valueOf(TUNGSTEN)
+                contentDescription = getString(R.string.search_voice)
+                isFocusable = true
+                isClickable = true
+                rowFocus(7) { has ->
+                    if (has) lastKeyboardFocus = this
+                    updateMicAppearance()
+                }
+                setOnClickListener { startVoiceSearch() }
+                rightEdgeKeys += this
+            } else {
+                imageTintList = ColorStateList.valueOf(TEXT_3)
+                alpha = 0.45f
+                contentDescription = getString(R.string.search_voice_unavailable)
+                isFocusable = false
+                isClickable = false
+            }
+        }
+        micButton = mic
+        last.addView(mic, LinearLayout.LayoutParams(dp(49), -1).apply { marginStart = dp(3) })
+    }
+
+    private fun updateMicAppearance() {
+        val mic = micButton ?: return
+        if (!canSpeak) return
+        mic.alpha = 1f
+        mic.imageTintList = ColorStateList.valueOf(if (listening || !mic.hasFocus()) TUNGSTEN else TEXT)
+        mic.contentDescription = getString(if (listening) R.string.search_voice_listening else R.string.search_voice)
+    }
+
+    private fun setListening(active: Boolean) {
+        listening = active
+        updateMicAppearance()
+    }
+
+    private fun startVoiceSearch() {
+        if (listening) {
+            speechRecognizer?.cancel()
+            setListening(false)
+            return
+        }
+        val speech = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+        if (speech.resolveActivity(packageManager) != null) {
+            val launched = runCatching { startActivityForResult(speech, SPEECH) }.isSuccess
+            if (launched) return
+        }
+        startSpeechRecognizer()
+    }
+
+    private fun startSpeechRecognizer() {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            choose(getString(R.string.search_voice), listOf(getString(R.string.action_ok)),
+                getString(R.string.search_voice_unavailable)) {}
+            return
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), RECORD_AUDIO_REQUEST)
+            return
+        }
+        val recognizer = speechRecognizer ?: SpeechRecognizer.createSpeechRecognizer(this).also { created ->
+            created.setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) = setListening(true)
+                override fun onBeginningOfSpeech() {}
+                override fun onRmsChanged(rmsdB: Float) {}
+                override fun onBufferReceived(buffer: ByteArray?) {}
+                override fun onEndOfSpeech() = setListening(false)
+                override fun onError(error: Int) {
+                    setListening(false)
+                    if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                        choose(getString(R.string.search_voice), listOf(getString(R.string.action_ok)),
+                            getString(R.string.search_voice_permission)) {}
+                    }
+                }
+                override fun onResults(results: Bundle?) {
+                    setListening(false)
+                    val words = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull() ?: return
+                    applyVoiceQuery(words)
+                }
+                override fun onPartialResults(partialResults: Bundle?) {}
+                override fun onEvent(eventType: Int, params: Bundle?) {}
+            })
+            speechRecognizer = created
+        }
+        setListening(true)
+        recognizer.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        })
+    }
+
+    private fun applyVoiceQuery(words: String) {
+        val trimmed = words.trim()
+        if (trimmed.isEmpty()) return
+        input.setText(trimmed)
+        input.setSelection(trimmed.length)
+        input.requestFocus()
+        main.removeCallbacks(typed)
+        search(false)
+    }
+
+    @Deprecated("Android result callback")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != SPEECH || resultCode != RESULT_OK) return
+        val words = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull() ?: return
+        applyVoiceQuery(words)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != RECORD_AUDIO_REQUEST) return
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            startSpeechRecognizer()
+        } else {
+            choose(getString(R.string.search_voice), listOf(getString(R.string.action_ok)),
+                getString(R.string.search_voice_permission)) {}
+        }
     }
 
     private var modeLabel: TextView? = null
@@ -431,6 +558,10 @@ class SearchActivity : Screen() {
             }
             if (event.keyCode == KeyEvent.KEYCODE_DEL) { delete(); return true }
             if (event.keyCode == KeyEvent.KEYCODE_SPACE) { append(" "); return true }
+            if ((event.keyCode == KeyEvent.KEYCODE_SEARCH || event.keyCode == KeyEvent.KEYCODE_VOICE_ASSIST) && canSpeak) {
+                startVoiceSearch()
+                return true
+            }
             val char = event.unicodeChar.takeIf { it in 32..126 }?.toChar()
             if (char != null && !event.isCtrlPressed && !event.isAltPressed) {
                 append(char.toString())
@@ -586,6 +717,8 @@ class SearchActivity : Screen() {
     }
 
     override fun onDestroy() {
+        speechRecognizer?.destroy()
+        speechRecognizer = null
         searchTasks.forEach { it.cancel(true) }
         super.onDestroy()
     }
@@ -762,6 +895,8 @@ class SearchActivity : Screen() {
         const val PER_TYPE = 12
         const val TYPING_PAUSE = 500L
         const val SEARCH_WAIT = 6000L
+        const val SPEECH = 31
+        const val RECORD_AUDIO_REQUEST = 32
         val searchPool = Images.newestFirst(8)
     }
 }

@@ -380,6 +380,9 @@
 
     <!-- Search -->
     <string name="search_clear">Clear search</string>
+    <string name="search_voice">Voice search</string>
+    <string name="search_voice_listening">Listening…</string>
+    <string name="search_voice_permission">Allow microphone access in TV settings to use voice search.</string>
     <string name="search_voice_unavailable">Voice search unavailable</string>
     <string name="search_space">Space</string>
     <string name="search_recent">Recent</string>

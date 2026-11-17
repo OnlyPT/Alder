@@ -381,6 +381,9 @@
 
     <!-- Search -->
     <string name="search_clear">Effacer la recherche</string>
+    <string name="search_voice">Recherche vocale</string>
+    <string name="search_voice_listening">Écoute en cours…</string>
+    <string name="search_voice_permission">Autorisez l\'accès au micro dans les paramètres de la TV pour utiliser la recherche vocale.</string>
     <string name="search_voice_unavailable">Recherche vocale indisponible</string>
     <string name="search_space">Espace</string>
     <string name="search_recent">Récentes</string>
